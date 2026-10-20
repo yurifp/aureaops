@@ -1,0 +1,250 @@
+{
+  "name": "AureaOps F2 - Leads (sync Base44)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "d9d54200-ad06-4b28-9d05-88ddfe491322",
+      "name": "A Cada 15 Min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "d4678074-0524-4374-8e57-b1953b1a9b36",
+      "name": "Ler Leads (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const leads = $input.all().map(function (i) { return i.json; });\nconst pendentes = leads.filter(function (l) {\n  return l.request_id && String(l.base44_sync) !== '1';\n});\nreturn pendentes.map(function (l) {\n  return { json: {\n    request_id: l.request_id,\n    lead_base44: {\n      request_id: l.request_id,\n      protocolo: l.protocolo,\n      nome: l.nome,\n      email: l.email,\n      telefone: l.telefone,\n      interesse: l.interesse || '',\n      mensagem: l.mensagem || '',\n      utm_source: l.utm_source || '',\n      utm_medium: l.utm_medium || '',\n      utm_campaign: l.utm_campaign || '',\n      consentimento_lgpd: true,\n      status: l.status || 'distribuido',\n      vendedor: l.vendedor || '',\n      origem: 'n8n_sync'\n    }\n  }};\n});"
+      },
+      "id": "7fb61cd0-ab74-4968-9c5c-59b7e777cca0",
+      "name": "Filtrar Nao Sincronizados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BASE44_API_URL }}/lead",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.BASE44_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.lead_base44) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "9e2d6945-62e1-4fd2-b25b-efbecba353f8",
+      "name": "Enviar ao Base44",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const enviados = $('Filtrar Nao Sincronizados').all();\nconst respostas = $input.all();\nconst ok = [], falha = [];\nrespostas.forEach(function (r, i) {\n  const lead = enviados[i] ? enviados[i].json : {};\n  const status = Number(r.json.statusCode || 0);\n  const item = { json: {\n    criado_em: new Date().toISOString(),\n    fluxo: 'F2',\n    evento: 'gravacao_base44',\n    status: status >= 200 && status < 300 ? 'sucesso' : 'erro',\n    request_id: lead.request_id || '',\n    http_status: status,\n    detalhe: JSON.stringify({ origem: 'n8n_sync' })\n  }};\n  (status >= 200 && status < 300 ? ok : falha).push(item);\n});\nreturn [ok, falha];"
+      },
+      "id": "a02e3184-fee3-4dda-ae0e-38d9b66ea969",
+      "name": "Consolidar Resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "request_id": "={{ $json.request_id }}",
+            "base44_sync": 1
+          },
+          "matchingColumns": [
+            "request_id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "6ed243d4-da8d-4ff5-a8a6-ad10dc981caa",
+      "name": "Marcar Sincronizado",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "criado_em": "={{ $json.criado_em }}",
+            "fluxo": "={{ $json.fluxo }}",
+            "evento": "={{ $json.evento }}",
+            "status": "={{ $json.status }}",
+            "request_id": "={{ $json.request_id }}",
+            "http_status": "={{ $json.http_status }}",
+            "detalhe": "={{ $json.detalhe }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "34cbddf6-cf9a-4bbe-9ff5-6fe5775cb316",
+      "name": "Log Falha (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "A Cada 15 Min": {
+      "main": [
+        [
+          {
+            "node": "Ler Leads (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Leads (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Filtrar Nao Sincronizados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar Nao Sincronizados": {
+      "main": [
+        [
+          {
+            "node": "Enviar ao Base44",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar ao Base44": {
+      "main": [
+        [
+          {
+            "node": "Consolidar Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar Resultado": {
+      "main": [
+        [
+          {
+            "node": "Marcar Sincronizado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Falha (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

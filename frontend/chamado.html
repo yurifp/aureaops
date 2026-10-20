@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Abrir chamado — Aurea Home</title>
+  <meta name="description" content="Abertura de chamado de pós-venda (troca, atraso, defeito ou dúvida) da Aurea Home.">
+  <!--
+    F1 — Formulário de abertura de chamado (SAC)
+    Envio: fetch POST JSON para o webhook do n8n com header X-Api-Key.
+
+    SOBRE A API KEY NO FRONT-END (limites e mitigação):
+    - Qualquer chave entregue ao navegador é PÚBLICA (visível no DevTools).
+      Ela aqui identifica o ORIGEM do envio, não autentica uma pessoa.
+    - Mitigações adotadas neste projeto:
+      1) A chave tem escopo mínimo: só cria chamado, não lê nem apaga nada.
+      2) Idempotência por request_id impede abuso de duplicação.
+      3) Validação server-side idêntica à do cliente (o servidor nunca confia
+         no front) + honeypot contra bots.
+      4) Rotação da chave documentada em docs/seguranca.md.
+  -->
+  <style>
+    :root {
+      --areia: #faf7f2;
+      --tinta: #2b2620;
+      --tinta-suave: #5c5348;
+      --dourado: #8a6014;
+      --dourado-claro: #f0e4cd;
+      --borda: #d9d2c7;
+      --erro: #a3271f;
+      --fundo-erro: #fdeceb;
+      --ok: #1e6b34;
+      --fundo-ok: #e8f5ec;
+      --raio: 10px;
+      --fonte: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--fonte);
+      color: var(--tinta);
+      background: var(--areia);
+      line-height: 1.55;
+    }
+    .pagina { max-width: 620px; margin: 0 auto; padding: 24px 16px 56px; }
+    header { border-bottom: 3px solid var(--dourado); margin-bottom: 24px; padding-bottom: 16px; }
+    .marca { font-size: 1.35rem; font-weight: 700; letter-spacing: .3px; }
+    .marca span { color: var(--dourado); }
+    header p { margin: 4px 0 0; color: var(--tinta-suave); font-size: .95rem; }
+    h1 { font-size: 1.25rem; margin: 0 0 4px; }
+    .intro { margin: 0 0 20px; color: var(--tinta-suave); }
+
+    fieldset {
+      border: 1px solid var(--borda); border-radius: var(--raio);
+      padding: 16px; margin: 0 0 18px; background: #fff;
+    }
+    legend { font-weight: 600; padding: 0 6px; }
+    .campo { margin-bottom: 16px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    .opcional { font-weight: 400; color: var(--tinta-suave); font-size: .85rem; }
+    input[type="text"], input[type="email"], input[type="tel"], textarea {
+      width: 100%; padding: 10px 12px; font: inherit; color: var(--tinta);
+      border: 1px solid var(--borda); border-radius: var(--raio); background: #fff;
+    }
+    textarea { min-height: 110px; resize: vertical; }
+    input:focus-visible, textarea:focus-visible, button:focus-visible,
+    input[type="radio"]:focus-visible + label {
+      outline: 3px solid var(--dourado); outline-offset: 1px;
+    }
+    input[aria-invalid="true"], textarea[aria-invalid="true"] {
+      border-color: var(--erro); background: var(--fundo-erro);
+    }
+    .dica { font-size: .82rem; color: var(--tinta-suave); margin: 4px 0 0; }
+    .campo-erro { color: var(--erro); font-size: .88rem; margin: 4px 0 0; min-height: 0; }
+
+    .opcoes-radio { display: grid; gap: 8px; }
+    .opcoes-radio div { display: flex; align-items: center; gap: 8px; }
+    .opcoes-radio label { font-weight: 400; margin: 0; }
+
+    .consenso { display: flex; gap: 10px; align-items: flex-start; }
+    .consenso input { width: 18px; height: 18px; margin-top: 3px; flex-shrink: 0; }
+    .consenso label { font-weight: 400; font-size: .92rem; }
+
+    button {
+      width: 100%; padding: 14px; font: inherit; font-weight: 700;
+      color: #fff; background: var(--tinta); border: 0; border-radius: var(--raio);
+      cursor: pointer;
+    }
+    button[disabled] { opacity: .65; cursor: progress; }
+
+    .painel { border-radius: var(--raio); padding: 14px 16px; margin-bottom: 20px; }
+    .painel[hidden] { display: none; }
+    .painel-ok { background: var(--fundo-ok); border: 1px solid var(--ok); color: var(--ok); }
+    .painel-erro { background: var(--fundo-erro); border: 1px solid var(--erro); color: var(--erro); }
+    .painel strong.protocolo { font-size: 1.1rem; letter-spacing: .5px; }
+
+    .campo-honeypot { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+    footer { margin-top: 28px; font-size: .8rem; color: var(--tinta-suave); }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="pagina">
+    <header>
+      <p class="marca">Aurea<span>Home</span></p>
+      <p>Central de Atendimento · Pós-venda</p>
+    </header>
+
+    <main>
+      <h1>Abrir um chamado</h1>
+      <p class="intro">Problema com troca, atraso na entrega, defeito ou dúvida sobre um pedido?
+        Preencha os dados abaixo e receba um protocolo na hora.</p>
+
+      <div id="painel-sucesso" class="painel painel-ok" role="status" aria-live="polite" hidden></div>
+      <div id="painel-erro" class="painel painel-erro" role="alert" hidden></div>
+
+      <form id="form-chamado" novalidate>
+        <!-- Honeypot: humanos não veem nem preenchem este campo. -->
+        <div class="campo-honeypot" aria-hidden="true">
+          <label for="website">Não preencha este campo</label>
+          <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+        </div>
+
+        <div class="campo">
+          <label for="nome">Nome completo</label>
+          <input type="text" id="nome" name="nome" autocomplete="name" required
+                 minlength="3" maxlength="120" aria-describedby="erro-nome">
+          <p class="campo-erro" id="erro-nome"></p>
+        </div>
+
+        <div class="campo">
+          <label for="email">E-mail</label>
+          <input type="email" id="email" name="email" autocomplete="email" required
+                 maxlength="160" aria-describedby="erro-email">
+          <p class="campo-erro" id="erro-email"></p>
+        </div>
+
+        <div class="campo">
+          <label for="telefone">Telefone com DDD</label>
+          <input type="tel" id="telefone" name="telefone" autocomplete="tel" required
+                 minlength="8" maxlength="20" inputmode="tel" aria-describedby="dica-telefone erro-telefone">
+          <p class="dica" id="dica-telefone">Exemplo: (00) 90000-0101</p>
+          <p class="campo-erro" id="erro-telefone"></p>
+        </div>
+
+        <div class="campo">
+          <label for="numero_pedido">Número do pedido</label>
+          <input type="text" id="numero_pedido" name="numero_pedido" required
+                 pattern="PED-[0-9]{4}-[0-9]{4}" maxlength="13"
+                 aria-describedby="dica-pedido erro-pedido">
+          <p class="dica" id="dica-pedido">Está no e-mail de confirmação. Exemplo: PED-2026-1001</p>
+          <p class="campo-erro" id="erro-pedido"></p>
+        </div>
+
+        <fieldset>
+          <legend>Motivo do contato</legend>
+          <div class="opcoes-radio" role="radiogroup" aria-label="Motivo do contato">
+            <div><input type="radio" id="motivo-troca" name="motivo" value="troca" required>
+                 <label for="motivo-troca">Troca ou devolução</label></div>
+            <div><input type="radio" id="motivo-atraso" name="motivo" value="atraso">
+                 <label for="motivo-atraso">Atraso na entrega</label></div>
+            <div><input type="radio" id="motivo-defeito" name="motivo" value="defeito">
+                 <label for="motivo-defeito">Produto com defeito</label></div>
+            <div><input type="radio" id="motivo-duvida" name="motivo" value="duvida">
+                 <label for="motivo-duvida">Dúvida sobre o pedido</label></div>
+          </div>
+          <p class="campo-erro" id="erro-motivo"></p>
+        </fieldset>
+
+        <div class="campo">
+          <label for="descricao">Descreva o que aconteceu</label>
+          <textarea id="descricao" name="descricao" required minlength="10" maxlength="2000"
+                    aria-describedby="erro-descricao"></textarea>
+          <p class="campo-erro" id="erro-descricao"></p>
+        </div>
+
+        <fieldset>
+          <legend>Consentimento (LGPD)</legend>
+          <div class="consenso">
+            <input type="checkbox" id="consentimento_lgpd" name="consentimento_lgpd" required>
+            <label for="consentimento_lgpd">Autorizo o uso dos meus dados exclusivamente para
+              atendimento deste chamado, conforme a Lei Geral de Proteção de Dados.</label>
+          </div>
+          <p class="campo-erro" id="erro-consentimento"></p>
+        </fieldset>
+
+        <button type="submit" id="botao-enviar">Abrir chamado</button>
+      </form>
+    </main>
+
+    <footer>
+      Aurea Home · Empresa fictícia do projeto AureaOps (portfólio).
+      Dados enviados por HTTPS a um webhook validado por API Key.
+    </footer>
+  </div>
+
+  <script>
+    'use strict';
+    /* ======================================================================
+       CONFIGURAÇÃO — TODO(manual)
+       1) WEBHOOK_URL: URL do webhook "f1-chamado" no seu n8n
+          (ex.: https://aurea.seu-dominio.example/webhook/f1-chamado)
+       2) API_KEY: o valor de API_KEY_F1 do .env do n8n
+       ====================================================================== */
+    const CONFIG = {
+      WEBHOOK_URL: '',
+      API_KEY: ''
+    };
+
+    const TIMEOUT_MS = 20000;      // corta a requisição morta
+    const RETENTATIVAS = 2;        // só para 429 / 5xx / falha de rede
+    const form = document.getElementById('form-chamado');
+    const botao = document.getElementById('botao-enviar');
+    const painelOk = document.getElementById('painel-sucesso');
+    const painelErro = document.getElementById('painel-erro');
+
+    function uuidv4() {
+      if (crypto.randomUUID) return crypto.randomUUID();
+      // Fallback (navegadores antigos): randômico, não criptográfico forte.
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+      });
+    }
+
+    function mostrarErroCampo(id, mensagem) {
+      const alvo = document.getElementById(id);
+      const campo = alvo.closest('.campo') || alvo.closest('fieldset');
+      const entrada = campo ? campo.querySelector('input,textarea') : null;
+      alvo.textContent = mensagem || '';
+      if (entrada) entrada.setAttribute('aria-invalid', mensagem ? 'true' : 'false');
+    }
+
+    function limparErrosCampos() {
+      ['erro-nome', 'erro-email', 'erro-telefone', 'erro-pedido',
+       'erro-motivo', 'erro-descricao', 'erro-consentimento']
+        .forEach((id) => mostrarErroCampo(id, ''));
+    }
+
+    function validarFormulario(dados) {
+      const erros = {};
+      if (!dados.nome || dados.nome.trim().length < 3) erros.nome = 'Informe seu nome completo.';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dados.email || '')) erros.email = 'Informe um e-mail válido.';
+      if (!dados.telefone || dados.telefone.replace(/\D/g, '').length < 8) erros.telefone = 'Informe um telefone com DDD.';
+      if (!/^PED-\d{4}-\d{4}$/.test(dados.numero_pedido || '')) erros.numero_pedido = 'Use o formato PED-2026-1001.';
+      if (!dados.motivo) erros.motivo = 'Escolha o motivo do contato.';
+      if (!dados.descricao || dados.descricao.trim().length < 10) erros.descricao = 'Descreva o problema com pelo menos 10 caracteres.';
+      if (!dados.consentimento_lgpd) erros.consentimento_lgpd = 'É necessário aceitar o uso dos dados para abrir o chamado.';
+      return erros;
+    }
+
+    function exibirErrosServidor(erros) {
+      const mapa = {
+        nome: 'erro-nome', email: 'erro-email', telefone: 'erro-telefone',
+        numero_pedido: 'erro-pedido', motivo: 'erro-motivo',
+        descricao: 'erro-descricao', consentimento_lgpd: 'erro-consentimento'
+      };
+      Object.entries(erros || {}).forEach(([campo, msg]) => {
+        if (mapa[campo]) mostrarErroCampo(mapa[campo], Array.isArray(msg) ? msg[0] : msg);
+      });
+    }
+
+    function painel(el, html) {
+      painelOk.hidden = true; painelErro.hidden = true;
+      if (!html) return;
+      el.innerHTML = html;
+      el.hidden = false;
+      el.focus?.();
+    }
+
+    async function enviarRequisicao(payload, tentativa) {
+      const controle = new AbortController();
+      const cronometro = setTimeout(() => controle.abort(), TIMEOUT_MS);
+      try {
+        const resposta = await fetch(CONFIG.WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Key': CONFIG.API_KEY },
+          body: JSON.stringify(payload),
+          signal: controle.signal
+        });
+        const corpo = await resposta.json().catch(() => ({}));
+        return { status: resposta.status, corpo };
+      } catch (falha) {
+        // Falha de rede/timeout: retentável com o MESMO request_id (idempotência).
+        if (tentativa < RETENTATIVAS) return { status: 0, corpo: null, _rede: true, falha };
+        throw falha;
+      } finally {
+        clearTimeout(cronometro);
+      }
+    }
+
+    function tratarResposta(resultado, payload) {
+      const { status, corpo } = resultado;
+      if (status >= 200 && status < 300 && corpo && corpo.sucesso) {
+        const protocolo = corpo.dados && corpo.dados.protocolo;
+        const duplicado = corpo.dados && corpo.dados.duplicado;
+        painel(painelOk,
+          '<p><strong>Chamado aberto!</strong></p>' +
+          '<p>Protocolo: <strong class="protocolo">' + (protocolo || '—') + '</strong></p>' +
+          '<p>Guarde este número. Você receberá retorno no e-mail informado' +
+          (duplicado ? ' (reenvio detectado: já existia um registro para esta solicitação).' : '.') + '</p>');
+        form.reset();
+        return true;
+      }
+      const codigo = (corpo && corpo.codigo) || ('HTTP_' + status);
+      const mensagem = (corpo && corpo.mensagem) || 'Falha ao enviar.';
+      if (codigo === 'ERRO_VALIDACAO' && corpo.dados && corpo.dados.erros) {
+        exibirErrosServidor(corpo.dados.erros);
+        painel(painelErro, '<p>Corrija os campos destacados e envie novamente.</p>');
+      } else if (status === 401 || codigo === 'ERRO_AUTENTICACAO') {
+        painel(painelErro, '<p>Não foi possível validar a origem do envio (chave de integração). Tente mais tarde.</p>');
+      } else {
+        painel(painelErro, '<p>' + mensagem + ' <br><small>Código: ' + codigo + '</small></p>');
+      }
+      return false;
+    }
+
+    form.addEventListener('submit', async (evento) => {
+      evento.preventDefault();
+      painel(null);
+      limparErrosCampos();
+
+      // Honeypot preenchido = bot: responde como sucesso e não incomoda a API.
+      if (document.getElementById('website').value !== '') {
+        painel(painelOk, '<p><strong>Chamado aberto!</strong></p>');
+        return;
+      }
+
+      const dados = Object.fromEntries(new FormData(form).entries());
+      dados.consentimento_lgpd = document.getElementById('consentimento_lgpd').checked;
+      const erros = validarFormulario(dados);
+      if (Object.keys(erros).length > 0) {
+        Object.entries(erros).forEach(([campo, msg]) => {
+          const mapa = { nome: 'erro-nome', email: 'erro-email', telefone: 'erro-telefone',
+            numero_pedido: 'erro-pedido', motivo: 'erro-motivo',
+            descricao: 'erro-descricao', consentimento_lgpd: 'erro-consentimento' };
+          mostrarErroCampo(mapa[campo], msg);
+        });
+        painel(painelErro, '<p>Revise os campos destacados.</p>');
+        return;
+      }
+
+      if (!CONFIG.WEBHOOK_URL || !CONFIG.API_KEY) {
+        painel(painelErro,
+          '<p>Formulário não configurado: preencha <code>CONFIG.WEBHOOK_URL</code> e ' +
+          '<code>CONFIG.API_KEY</code> no topo do &lt;script&gt; (ver README).</p>');
+        return;
+      }
+
+      const payload = {
+        request_id: uuidv4(),
+        nome: dados.nome.trim(),
+        email: dados.email.trim().toLowerCase(),
+        telefone: dados.telefone.trim(),
+        numero_pedido: dados.numero_pedido.trim().toUpperCase(),
+        motivo: dados.motivo,
+        descricao: dados.descricao.trim(),
+        consentimento_lgpd: true
+      };
+
+      botao.disabled = true;
+      botao.textContent = 'Enviando…';
+      try {
+        let tentativa = 0;
+        for (;;) {
+          botao.textContent = tentativa === 0 ? 'Enviando…' : 'Reenviando (tentativa ' + (tentativa + 1) + ')…';
+          const resultado = await enviarRequisicao(payload, tentativa);
+          const retentavel = resultado.status === 429 || resultado.status >= 500 || resultado._rede;
+          if (retentavel && tentativa < RETENTATIVAS) {
+            await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, tentativa)));
+            tentativa += 1;
+            continue;
+          }
+          if (resultado._rede && tentativa >= RETENTATIVAS) {
+            painel(painelErro, '<p>Sem conexão com o serviço. Verifique sua internet e tente novamente.</p>');
+          } else {
+            tratarResposta(resultado, payload);
+          }
+          break;
+        }
+      } catch (falha) {
+        painel(painelErro, '<p>Erro inesperado ao enviar. Tente novamente em instantes.</p>');
+        console.error('Falha no envio do chamado:', falha);
+      } finally {
+        botao.disabled = false;
+        botao.textContent = 'Abrir chamado';
+      }
+    });
+  </script>
+</body>
+</html>

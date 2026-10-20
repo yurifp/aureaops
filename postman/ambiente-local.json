@@ -1,0 +1,26 @@
+{
+  "name": "AureaOps — Local",
+  "values": [
+    {
+      "key": "n8nWebhookUrl",
+      "value": "http://localhost:5678/webhook/f1-chamado",
+      "enabled": true
+    },
+    {
+      "key": "appsScriptUrl",
+      "value": "https://script.google.com/macros/s/SEU_DEPLOYMENT_ID/exec",
+      "enabled": true
+    },
+    {
+      "key": "apiKeyF1",
+      "value": "CHAVE_F1_AQUI",
+      "enabled": true
+    },
+    {
+      "key": "apiKeyF2",
+      "value": "CHAVE_F2_AQUI",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

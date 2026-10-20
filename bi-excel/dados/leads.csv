@@ -1,0 +1,17 @@
+﻿protocolo,created_at,origem,status,vendedor,primeiro_contato_em,convertido_em,horas_ate_contato,convertido
+LED-1,2026-10-05 09:04:55,instagram,convertido,Ana Souza,2026-10-05 10:30:00,2026-10-06 15:00:00,1.4,1
+LED-2,2026-10-05 11:09:58,google,convertido,Bruno Lima,2026-10-05 14:00:00,2026-10-07 09:30:00,2.9,1
+LED-3,2026-10-06 10:19:50,instagram,contatado,Carla Dias,2026-10-06 11:00:00,,0.7,0
+LED-4,2026-10-06 15:35:10,google,perdido,Diego Alves,2026-10-07 09:00:00,,17.4,0
+LED-5,2026-10-08 08:44:59,newsletter,contatado,Ana Souza,2026-10-08 09:10:00,,0.4,0
+LED-6,2026-10-09 13:59:57,newsletter,nao_respondeu,Bruno Lima,2026-10-12 10:00:00,,68.0,0
+LED-7,2026-10-10 09:30:03,indicacao,convertido,Carla Dias,2026-10-10 10:15:00,2026-10-11 16:20:00,0.8,1
+LED-8,2026-10-11 16:50:01,google,perdido,Diego Alves,2026-10-12 09:00:00,,16.2,0
+LED-9,2026-10-13 10:09:49,instagram,contatado,Ana Souza,2026-10-13 10:40:00,,0.5,0
+LED-10,2026-10-14 09:19:52,google,nao_respondeu,Bruno Lima,2026-10-17 11:00:00,,73.7,0
+LED-11,2026-10-15 12:59:58,instagram,convertido,Carla Dias,2026-10-15 13:30:00,2026-10-16 10:00:00,0.5,1
+LED-12,2026-10-16 17:40:07,newsletter,nao_respondeu,Diego Alves,2026-10-19 09:00:00,,63.3,0
+LED-13,2026-10-18 09:14:51,google,contatado,Ana Souza,2026-10-18 09:45:00,,0.5,0
+LED-14,2026-10-18 18:04:56,instagram,distribuido,Bruno Lima,,,,0
+LED-15,2026-10-19 08:29:54,newsletter,distribuido,Carla Dias,,,,0
+LED-16,2026-10-20 07:50:02,indicacao,novo,,,,,0

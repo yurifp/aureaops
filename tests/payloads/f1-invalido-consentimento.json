@@ -1,0 +1,10 @@
+{
+  "request_id": "aaaaaaaa-bbbb-4ccc-8ddd-000000000003",
+  "nome": "Beatriz Alves",
+  "email": "beatriz.alves@example.com",
+  "telefone": "(00) 90000-0103",
+  "numero_pedido": "PED-2026-1003",
+  "motivo": "troca",
+  "descricao": "Preciso trocar o jogo de lençol para tamanho queen.",
+  "consentimento_lgpd": false
+}

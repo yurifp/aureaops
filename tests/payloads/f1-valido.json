@@ -1,0 +1,10 @@
+{
+  "request_id": "aaaaaaaa-bbbb-4ccc-8ddd-000000000001",
+  "nome": "Mariana Duarte",
+  "email": "mariana.duarte@example.com",
+  "telefone": "(00) 90000-0101",
+  "numero_pedido": "PED-2026-1001",
+  "motivo": "defeito",
+  "descricao": "Cadeira chegou com o braco direito riscado e soltando parafuso.",
+  "consentimento_lgpd": true
+}

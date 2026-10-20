@@ -1,0 +1,26 @@
+{
+  "name": "AureaOps — Producao (placeholder)",
+  "values": [
+    {
+      "key": "n8nWebhookUrl",
+      "value": "https://seu-n8n.exemplo/webhook/f1-chamado",
+      "enabled": true
+    },
+    {
+      "key": "appsScriptUrl",
+      "value": "https://script.google.com/macros/s/SEU_DEPLOYMENT_ID/exec",
+      "enabled": true
+    },
+    {
+      "key": "apiKeyF1",
+      "value": "CHAVE_F1_DE_PRODUCAO",
+      "enabled": true
+    },
+    {
+      "key": "apiKeyF2",
+      "value": "CHAVE_F2_DE_PRODUCAO",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

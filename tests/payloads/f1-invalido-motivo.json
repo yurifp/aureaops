@@ -1,0 +1,10 @@
+{
+  "request_id": "aaaaaaaa-bbbb-4ccc-8ddd-000000000002",
+  "nome": "Rafael Nunes",
+  "email": "rafael.nunes@example.com",
+  "telefone": "(00) 90000-0102",
+  "numero_pedido": "PED-2026-1002",
+  "motivo": "reclamacao",
+  "descricao": "Quero reclamar do atendimento anterior.",
+  "consentimento_lgpd": true
+}

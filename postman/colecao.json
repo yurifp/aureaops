@@ -1,0 +1,551 @@
+{
+  "info": {
+    "name": "AureaOps — F1 e F2",
+    "_postman_id": "bf39471e-1c5e-491b-b2a8-44dc9a965477",
+    "description": "Colecao do projeto AureaOps: cenarios de sucesso e falha dos fluxos F1 (chamados, webhook n8n) e F2 (leads, Apps Script). Importe um dos ambientes (ambiente-local.json / ambiente-producao.json) antes de rodar. Atencao: o F2 responde sempre HTTP 200 — os testes leem o campo 'codigo'.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "n8nWebhookUrl",
+      "value": "http://localhost:5678/webhook/f1-chamado",
+      "type": "string"
+    },
+    {
+      "key": "appsScriptUrl",
+      "value": "https://script.google.com/macros/s/SEU_DEPLOYMENT_ID/exec",
+      "type": "string"
+    },
+    {
+      "key": "apiKeyF1",
+      "value": "CHAVE_F1_AQUI",
+      "type": "string"
+    },
+    {
+      "key": "apiKeyF2",
+      "value": "CHAVE_F2_AQUI",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Infra",
+      "item": [
+        {
+          "name": "Status do F2 (Apps Script)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('sucesso=true', () => pm.response.json().sucesso === true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{appsScriptUrl}}?action=status",
+              "host": [
+                "{{appsScriptUrl}}"
+              ],
+              "path": [],
+              "query": [
+                {
+                  "key": "action",
+                  "value": "status"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "F1 — Chamados (n8n)",
+      "item": [
+        {
+          "name": "Criar chamado (valido)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const gerar = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                  "  const r = Math.random() * 16 | 0;",
+                  "  return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                  "});",
+                  "pm.variables.set('f1_request_id', gerar());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('sucesso=true e protocolo SAC-AAAAMMDD-NNNN', () => {",
+                  "  pm.expect(j.sucesso).to.eql(true);",
+                  "  pm.expect(j.dados.protocolo).to.match(/^SAC-\\d{8}-\\d{4}$/);",
+                  "});",
+                  "pm.collectionVariables.set('f1_request_id_salvo', pm.variables.get('f1_request_id'));",
+                  "pm.collectionVariables.set('f1_protocolo_salvo', j.dados.protocolo);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKeyF1}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{n8nWebhookUrl}}",
+              "host": [
+                "{{n8nWebhookUrl}}"
+              ],
+              "path": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{f1_request_id}}\",\n  \"nome\": \"Mariana Duarte\",\n  \"email\": \"mariana.duarte@example.com\",\n  \"telefone\": \"(00) 90000-0101\",\n  \"numero_pedido\": \"PED-2026-1001\",\n  \"motivo\": \"defeito\",\n  \"descricao\": \"Cadeira chegou com o braco direito riscado (teste Postman).\",\n  \"consentimento_lgpd\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reenvio identico (idempotencia)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 no reenvio (idempotencia)', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('duplicado=true e mesmo protocolo', () => {",
+                  "  pm.expect(j.dados.duplicado).to.eql(true);",
+                  "  pm.expect(j.dados.protocolo).to.eql(pm.collectionVariables.get('f1_protocolo_salvo'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKeyF1}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{n8nWebhookUrl}}",
+              "host": [
+                "{{n8nWebhookUrl}}"
+              ],
+              "path": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{f1_request_id_salvo}}\",\n  \"nome\": \"Mariana Duarte\",\n  \"email\": \"mariana.duarte@example.com\",\n  \"telefone\": \"(00) 90000-0101\",\n  \"numero_pedido\": \"PED-2026-1001\",\n  \"motivo\": \"defeito\",\n  \"descricao\": \"Cadeira chegou com o braco direito riscado (teste Postman).\",\n  \"consentimento_lgpd\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Motivo invalido (400)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const gerar = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                  "  const r = Math.random() * 16 | 0;",
+                  "  return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                  "});",
+                  "pm.variables.set('f1_request_id', gerar());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+                  "const j = pm.response.json();",
+                  "pm.test('codigo=ERRO_VALIDACAO com lista de erros', () => {",
+                  "  pm.expect(j.codigo).to.eql('ERRO_VALIDACAO');",
+                  "  pm.expect(j.dados.erros.motivo).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{apiKeyF1}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{n8nWebhookUrl}}",
+              "host": [
+                "{{n8nWebhookUrl}}"
+              ],
+              "path": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{f1_request_id}}\",\n  \"nome\": \"Mariana Duarte\",\n  \"email\": \"mariana.duarte@example.com\",\n  \"telefone\": \"(00) 90000-0101\",\n  \"numero_pedido\": \"PED-2026-1001\",\n  \"motivo\": \"reclamacao\",\n  \"descricao\": \"Cadeira chegou com o braco direito riscado (teste Postman).\",\n  \"consentimento_lgpd\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Sem API Key (401)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const gerar = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                  "  const r = Math.random() * 16 | 0;",
+                  "  return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                  "});",
+                  "pm.variables.set('f1_request_id', gerar());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+                  "pm.test('codigo=ERRO_AUTENTICACAO', () => pm.response.json().codigo === 'ERRO_AUTENTICACAO');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{n8nWebhookUrl}}",
+              "host": [
+                "{{n8nWebhookUrl}}"
+              ],
+              "path": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{f1_request_id}}\",\n  \"nome\": \"Mariana Duarte\",\n  \"email\": \"mariana.duarte@example.com\",\n  \"telefone\": \"(00) 90000-0101\",\n  \"numero_pedido\": \"PED-2026-1001\",\n  \"motivo\": \"defeito\",\n  \"descricao\": \"Cadeira chegou com o braco direito riscado (teste Postman).\",\n  \"consentimento_lgpd\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "F2 — Leads (Apps Script)",
+      "item": [
+        {
+          "name": "Capturar lead (valido)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const gerar = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                  "  const r = Math.random() * 16 | 0;",
+                  "  return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                  "});",
+                  "pm.variables.set('f2_request_id', gerar());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Apps Script responde sempre HTTP 200: o contrato vive no corpo (campo codigo).",
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('sucesso=true e protocolo LED-AAAAMMDD-NNNN', () => {",
+                  "  pm.expect(j.sucesso).to.eql(true);",
+                  "  pm.expect(j.dados.protocolo).to.match(/^LED-\\d{8}-\\d{4}$/);",
+                  "});",
+                  "pm.collectionVariables.set('f2_request_id_salvo', pm.variables.get('f2_request_id'));",
+                  "pm.collectionVariables.set('f2_protocolo_salvo', j.dados.protocolo);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appsScriptUrl}}?api_key={{apiKeyF2}}",
+              "host": [
+                "{{appsScriptUrl}}"
+              ],
+              "path": [],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKeyF2}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{f2_request_id}}\",\n  \"nome\": \"Patricia Ramos\",\n  \"email\": \"patricia.ramos@example.com\",\n  \"telefone\": \"(00) 90000-0201\",\n  \"interesse\": \"Sofa retiltil\",\n  \"mensagem\": \"Quero medidas para sala pequena (teste Postman).\",\n  \"utm_source\": \"instagram\",\n  \"utm_medium\": \"social\",\n  \"utm_campaign\": \"primavera-2026\",\n  \"utm_content\": \"carrossel-01\",\n  \"consentimento_lgpd\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reenvio identico (idempotencia)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 no reenvio', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('duplicado=true e mesmo protocolo', () => {",
+                  "  pm.expect(j.dados.duplicado).to.eql(true);",
+                  "  pm.expect(j.dados.protocolo).to.eql(pm.collectionVariables.get('f2_protocolo_salvo'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appsScriptUrl}}?api_key={{apiKeyF2}}",
+              "host": [
+                "{{appsScriptUrl}}"
+              ],
+              "path": [],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKeyF2}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{f2_request_id_salvo}}\",\n  \"nome\": \"Patricia Ramos\",\n  \"email\": \"patricia.ramos@example.com\",\n  \"telefone\": \"(00) 90000-0201\",\n  \"interesse\": \"Sofa retiltil\",\n  \"mensagem\": \"Quero medidas para sala pequena (teste Postman).\",\n  \"utm_source\": \"instagram\",\n  \"utm_medium\": \"social\",\n  \"utm_campaign\": \"primavera-2026\",\n  \"utm_content\": \"carrossel-01\",\n  \"consentimento_lgpd\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Sem consentimento (validacao)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const gerar = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                  "  const r = Math.random() * 16 | 0;",
+                  "  return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                  "});",
+                  "pm.variables.set('f2_request_id', gerar());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 com codigo=ERRO_VALIDACAO', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().codigo).to.eql('ERRO_VALIDACAO');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appsScriptUrl}}?api_key={{apiKeyF2}}",
+              "host": [
+                "{{appsScriptUrl}}"
+              ],
+              "path": [],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "{{apiKeyF2}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{f2_request_id}}\",\n  \"nome\": \"Patricia Ramos\",\n  \"email\": \"patricia.ramos@example.com\",\n  \"telefone\": \"(00) 90000-0201\",\n  \"interesse\": \"Sofa retiltil\",\n  \"mensagem\": \"Quero medidas para sala pequena (teste Postman).\",\n  \"utm_source\": \"instagram\",\n  \"utm_medium\": \"social\",\n  \"utm_campaign\": \"primavera-2026\",\n  \"utm_content\": \"carrossel-01\",\n  \"consentimento_lgpd\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "API key errada (autenticacao)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const gerar = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                  "  const r = Math.random() * 16 | 0;",
+                  "  return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                  "});",
+                  "pm.variables.set('f2_request_id', gerar());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200 com codigo=ERRO_AUTENTICACAO', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().codigo).to.eql('ERRO_AUTENTICACAO');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{appsScriptUrl}}?api_key=chave-errada",
+              "host": [
+                "{{appsScriptUrl}}"
+              ],
+              "path": [],
+              "query": [
+                {
+                  "key": "api_key",
+                  "value": "chave-errada"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"request_id\": \"{{f2_request_id}}\",\n  \"nome\": \"Patricia Ramos\",\n  \"email\": \"patricia.ramos@example.com\",\n  \"telefone\": \"(00) 90000-0201\",\n  \"interesse\": \"Sofa retiltil\",\n  \"mensagem\": \"Quero medidas para sala pequena (teste Postman).\",\n  \"utm_source\": \"instagram\",\n  \"utm_medium\": \"social\",\n  \"utm_campaign\": \"primavera-2026\",\n  \"utm_content\": \"carrossel-01\",\n  \"consentimento_lgpd\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

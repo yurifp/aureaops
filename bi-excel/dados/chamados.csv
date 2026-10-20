@@ -1,0 +1,11 @@
+﻿protocolo,aberto_em,cliente,numero_pedido,motivo,prioridade,sla_horas,status,escalado,resolvido_em,horas_resolucao,cumpriu_sla
+SAC-20261001-0009,2026-10-01 09:00:00,Mariana Duarte,PED-2026-1009,atraso,media,24,resolvido,0,2026-10-02 15:00:00,30.0,0
+SAC-20261005-0003,2026-10-05 10:00:00,Beatriz Alves,PED-2026-1003,troca,media,24,resolvido,0,2026-10-05 20:00:00,10.0,1
+SAC-20261008-0002,2026-10-08 14:00:00,Rafael Nunes,PED-2026-1002,defeito,alta,4,resolvido,1,2026-10-08 20:00:00,6.0,0
+SAC-20261010-0001,2026-10-10 09:00:00,Mariana Duarte,PED-2026-1001,defeito,alta,4,resolvido,0,2026-10-10 11:00:00,2.0,1
+SAC-20261011-0005,2026-10-11 08:00:00,Fernanda Lopes,PED-2026-1005,duvida,baixa,72,resolvido,0,2026-10-12 14:00:00,30.0,1
+SAC-20261014-0010,2026-10-14 12:00:00,Beatriz Alves,PED-2026-1010,defeito,alta,4,cancelado,0,,,0
+SAC-20261016-0008,2026-10-16 07:00:00,Thiago Barbosa,PED-2026-1008,duvida,baixa,72,em_atendimento,1,,,0
+SAC-20261019-0004,2026-10-19 02:00:00,Carlos Menezes,PED-2026-1004,atraso,media,24,em_atendimento,1,,,0
+SAC-20261019-0006,2026-10-19 20:00:00,Gustavo Pereira,PED-2026-1006,troca,media,24,aguardando_cliente,0,,,0
+SAC-20261020-0007,2026-10-20 08:30:00,Heloisa Martins,PED-2026-1007,defeito,alta,4,aberto,0,,,0

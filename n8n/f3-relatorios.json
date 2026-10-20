@@ -1,0 +1,581 @@
+{
+  "name": "AureaOps F3 - Relatorios e Alertas",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "79919b6b-f9a7-49fd-9ed2-b0c2f3e80f6f",
+      "name": "Diario 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "chamados",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "f15836cf-7b10-4557-8cc1-a25275ea66fc",
+      "name": "Ler Chamados (F3 Diario)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "b30a3875-a692-4ec4-8eb8-ddc9a1763dcf",
+      "name": "Ler Leads (F3 Diario)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -760,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const chamados = $('Ler Chamados (F3 Diario)').all().map(function (i) { return i.json; });\nconst leads = $('Ler Leads (F3 Diario)').all().map(function (i) { return i.json; });\nconst agora = Date.now();\nconst janela = 1 * 24 * 3600 * 1000;\nconst noPeriodo = function (iso) {\n  const t = Date.parse(String(iso || ''));\n  return !isNaN(t) && agora - t <= janela;\n};\nconst novos = chamados.filter(function (c) { return noPeriodo(c.aberto_em); });\nconst resolvidos = chamados.filter(function (c) { return c.status === 'resolvido' && noPeriodo(c.resolvido_em); });\nconst noPrazo = resolvidos.filter(function (c) {\n  return Date.parse(String(c.resolvido_em || '')) - Date.parse(String(c.aberto_em || '')) <= Number(c.sla_horas || 0) * 3600000;\n});\nconst emAberto = chamados.filter(function (c) { return !['resolvido', 'cancelado'].includes(String(c.status)); });\nconst vencidos = emAberto.filter(function (c) { return Number(c.escalado) === 1; });\nconst leadsNovos = leads.filter(function (l) { return noPeriodo(l.created_at); });\nconst convertidos = leads.filter(function (l) { return l.status === 'convertido' && noPeriodo(l.convertido_em); });\nconst semContato = leads.filter(function (l) { return l.status === 'distribuido' && !l.primeiro_contato_em; });\nconst porOrigem = {};\nleadsNovos.forEach(function (l) {\n  const o = l.utm_source || 'direto';\n  porOrigem[o] = (porOrigem[o] || 0) + 1;\n});\nconst pctSla = resolvidos.length ? Math.round(100 * noPrazo.length / resolvidos.length) : null;\nconst kpis = {\n  novos_chamados: novos.length, chamados_resolvidos: resolvidos.length, pct_sla: pctSla,\n  chamados_em_aberto: emAberto.length, chamados_vencidos: vencidos.length,\n  leads_novos: leadsNovos.length, leads_convertidos: convertidos.length,\n  leads_sem_contato: semContato.length\n};\nconst origens = Object.keys(porOrigem).map(function (o) { return '<li>' + o + ': ' + porOrigem[o] + '</li>'; }).join('');\nconst whats = 'AureaOps Resumo diario: ' + novos.length + ' chamados novos, ' + resolvidos.length + ' resolvidos (SLA ' + (pctSla === null ? 's/d' : pctSla + '%') + '), ' + leadsNovos.length + ' leads, ' + convertidos.length + ' conversoes.';\nreturn [{ json: {\n  criado_em: new Date().toISOString(),\n  fluxo: 'F3',\n  evento: 'relatorio_diario',\n  status: 'sucesso',\n  request_id: '',\n  http_status: 200,\n  detalhe: JSON.stringify(kpis),\n  email_para: $env.GESTOR_EMAIL,\n  email_assunto: '[AureaOps] Resumo diario - ' + new Date().toISOString().slice(0, 10),\n  email_html: '<h2>Resumo diario AureaOps</h2><h3>SAC</h3><ul>' +\n    '<li>Novos chamados: ' + kpis.novos_chamados + '</li>' +\n    '<li>Resolvidos: ' + kpis.chamados_resolvidos + ' (SLA cumprido: ' + (pctSla === null ? 'sem dados' : pctSla + '%') + ')</li>' +\n    '<li>Em aberto: ' + kpis.chamados_em_aberto + ' (vencidos/escalados: ' + kpis.chamados_vencidos + ')</li></ul>' +\n    '<h3>Comercial</h3><ul><li>Leads novos: ' + kpis.leads_novos + '</li>' +\n    '<li>Convertidos: ' + kpis.leads_convertidos + '</li>' +\n    '<li>Sem primeiro contato: ' + kpis.leads_sem_contato + '</li>' +\n    '<li>Origens: ' + (origens ? '<ul>' + origens + '</ul>' : 'sem leads no periodo') + '</li></ul>',\n  whats_para: $env.GESTOR_WHATSAPP,\n  whats_texto: whats,\n  whats_body: { messaging_product: 'whatsapp', to: $env.GESTOR_WHATSAPP, type: 'template', template: { name: 'resumo_periodo', language: { code: 'pt_BR' }, components: [{ type: 'body', parameters: [{ type: 'text', text: whats }] }] } }\n}}];"
+      },
+      "id": "745fde17-aab5-4e34-99c5-b174c22aa85f",
+      "name": "KPIs Diario",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "6b6f8626-8c24-4984-bb36-38263b191925",
+              "leftValue": "={{ $env.MODO_WHATSAPP }}",
+              "rightValue": "real",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "88370bb5-b00a-4022-aa72-b5b19242ea6b",
+      "name": "WhatsApp Real? (Diario)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -280,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"https://graph.facebook.com/\" + $env.WHATSAPP_API_VERSION + \"/\" + $env.WHATSAPP_PHONE_NUMBER_ID + \"/messages\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.WHATSAPP_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.whats_body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "140177a7-4c2c-4680-8cc4-629bbc826a6d",
+      "name": "WhatsApp Diario (Real)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -40,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_USER }}",
+        "to": "={{ $json.email_para }}",
+        "subject": "={{ $json.email_assunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {}
+      },
+      "id": "ff88d749-4387-4762-bda2-1d551f9c5cba",
+      "name": "E-mail Diario",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "criado_em": "={{ $json.criado_em }}",
+            "fluxo": "={{ $json.fluxo }}",
+            "evento": "={{ $json.evento }}",
+            "status": "={{ $json.status }}",
+            "request_id": "={{ $json.request_id }}",
+            "http_status": "={{ $json.http_status }}",
+            "detalhe": "={{ $json.detalhe }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "3fce1931-da53-4cef-a847-a9abfb4661c5",
+      "name": "Log Relatorio Diario (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 7 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "aa6d48a8-7327-433a-b3dd-aeb27a9c6e15",
+      "name": "Semanal Segunda 07:30",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1000,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "chamados",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "4b179e96-a227-4b1b-b67a-bd21fbc4ceb8",
+      "name": "Ler Chamados (F3 Semanal)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -760,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "d0814b27-7d3e-4130-ae21-9f74d5f4e6fc",
+      "name": "Ler Leads (F3 Semanal)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -760,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const chamados = $('Ler Chamados (F3 Semanal)').all().map(function (i) { return i.json; });\nconst leads = $('Ler Leads (F3 Semanal)').all().map(function (i) { return i.json; });\nconst agora = Date.now();\nconst janela = 7 * 24 * 3600 * 1000;\nconst noPeriodo = function (iso) {\n  const t = Date.parse(String(iso || ''));\n  return !isNaN(t) && agora - t <= janela;\n};\nconst novos = chamados.filter(function (c) { return noPeriodo(c.aberto_em); });\nconst resolvidos = chamados.filter(function (c) { return c.status === 'resolvido' && noPeriodo(c.resolvido_em); });\nconst noPrazo = resolvidos.filter(function (c) {\n  return Date.parse(String(c.resolvido_em || '')) - Date.parse(String(c.aberto_em || '')) <= Number(c.sla_horas || 0) * 3600000;\n});\nconst emAberto = chamados.filter(function (c) { return !['resolvido', 'cancelado'].includes(String(c.status)); });\nconst vencidos = emAberto.filter(function (c) { return Number(c.escalado) === 1; });\nconst leadsNovos = leads.filter(function (l) { return noPeriodo(l.created_at); });\nconst convertidos = leads.filter(function (l) { return l.status === 'convertido' && noPeriodo(l.convertido_em); });\nconst semContato = leads.filter(function (l) { return l.status === 'distribuido' && !l.primeiro_contato_em; });\nconst porOrigem = {};\nleadsNovos.forEach(function (l) {\n  const o = l.utm_source || 'direto';\n  porOrigem[o] = (porOrigem[o] || 0) + 1;\n});\nconst pctSla = resolvidos.length ? Math.round(100 * noPrazo.length / resolvidos.length) : null;\nconst kpis = {\n  novos_chamados: novos.length, chamados_resolvidos: resolvidos.length, pct_sla: pctSla,\n  chamados_em_aberto: emAberto.length, chamados_vencidos: vencidos.length,\n  leads_novos: leadsNovos.length, leads_convertidos: convertidos.length,\n  leads_sem_contato: semContato.length\n};\nconst origens = Object.keys(porOrigem).map(function (o) { return '<li>' + o + ': ' + porOrigem[o] + '</li>'; }).join('');\nconst whats = 'AureaOps Resumo semanal: ' + novos.length + ' chamados novos, ' + resolvidos.length + ' resolvidos (SLA ' + (pctSla === null ? 's/d' : pctSla + '%') + '), ' + leadsNovos.length + ' leads, ' + convertidos.length + ' conversoes.';\nreturn [{ json: {\n  criado_em: new Date().toISOString(),\n  fluxo: 'F3',\n  evento: 'relatorio_semanal',\n  status: 'sucesso',\n  request_id: '',\n  http_status: 200,\n  detalhe: JSON.stringify(kpis),\n  email_para: $env.GESTOR_EMAIL,\n  email_assunto: '[AureaOps] Resumo semanal - ' + new Date().toISOString().slice(0, 10),\n  email_html: '<h2>Resumo semanal AureaOps</h2><h3>SAC</h3><ul>' +\n    '<li>Novos chamados: ' + kpis.novos_chamados + '</li>' +\n    '<li>Resolvidos: ' + kpis.chamados_resolvidos + ' (SLA cumprido: ' + (pctSla === null ? 'sem dados' : pctSla + '%') + ')</li>' +\n    '<li>Em aberto: ' + kpis.chamados_em_aberto + ' (vencidos/escalados: ' + kpis.chamados_vencidos + ')</li></ul>' +\n    '<h3>Comercial</h3><ul><li>Leads novos: ' + kpis.leads_novos + '</li>' +\n    '<li>Convertidos: ' + kpis.leads_convertidos + '</li>' +\n    '<li>Sem primeiro contato: ' + kpis.leads_sem_contato + '</li>' +\n    '<li>Origens: ' + (origens ? '<ul>' + origens + '</ul>' : 'sem leads no periodo') + '</li></ul>',\n  whats_para: $env.GESTOR_WHATSAPP,\n  whats_texto: whats,\n  whats_body: { messaging_product: 'whatsapp', to: $env.GESTOR_WHATSAPP, type: 'template', template: { name: 'resumo_periodo', language: { code: 'pt_BR' }, components: [{ type: 'body', parameters: [{ type: 'text', text: whats }] }] } }\n}}];"
+      },
+      "id": "ccfc6639-ec56-495e-b88b-b5e5fa75b8f3",
+      "name": "KPIs Semanal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "34f2fa70-9869-4f2b-9f7d-477a4454263b",
+              "leftValue": "={{ $env.MODO_WHATSAPP }}",
+              "rightValue": "real",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "60ba2111-cf06-42fa-aca1-fe0ef458d0f5",
+      "name": "WhatsApp Real? (Semanal)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -280,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"https://graph.facebook.com/\" + $env.WHATSAPP_API_VERSION + \"/\" + $env.WHATSAPP_PHONE_NUMBER_ID + \"/messages\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.WHATSAPP_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.whats_body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "b6e5b7d2-567f-4a26-a783-60941b978c25",
+      "name": "WhatsApp Semanal (Real)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -40,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_USER }}",
+        "to": "={{ $json.email_para }}",
+        "subject": "={{ $json.email_assunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {}
+      },
+      "id": "94acd173-1c93-4a23-acb2-490fa5c95cd9",
+      "name": "E-mail Semanal",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "criado_em": "={{ $json.criado_em }}",
+            "fluxo": "={{ $json.fluxo }}",
+            "evento": "={{ $json.evento }}",
+            "status": "={{ $json.status }}",
+            "request_id": "={{ $json.request_id }}",
+            "http_status": "={{ $json.http_status }}",
+            "detalhe": "={{ $json.detalhe }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "a460a30f-e74d-4e24-bd4b-534ee8bad703",
+      "name": "Log Relatorio Semanal (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Diario 07:00": {
+      "main": [
+        [
+          {
+            "node": "Ler Chamados (F3 Diario)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Chamados (F3 Diario)": {
+      "main": [
+        [
+          {
+            "node": "Ler Leads (F3 Diario)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Leads (F3 Diario)": {
+      "main": [
+        [
+          {
+            "node": "KPIs Diario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "KPIs Diario": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Real? (Diario)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Real? (Diario)": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Diario (Real)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E-mail Diario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Diario (Real)": {
+      "main": [
+        [
+          {
+            "node": "E-mail Diario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E-mail Diario": {
+      "main": [
+        [
+          {
+            "node": "Log Relatorio Diario (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Semanal Segunda 07:30": {
+      "main": [
+        [
+          {
+            "node": "Ler Chamados (F3 Semanal)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Chamados (F3 Semanal)": {
+      "main": [
+        [
+          {
+            "node": "Ler Leads (F3 Semanal)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Leads (F3 Semanal)": {
+      "main": [
+        [
+          {
+            "node": "KPIs Semanal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "KPIs Semanal": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Real? (Semanal)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Real? (Semanal)": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Semanal (Real)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "E-mail Semanal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Semanal (Real)": {
+      "main": [
+        [
+          {
+            "node": "E-mail Semanal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E-mail Semanal": {
+      "main": [
+        [
+          {
+            "node": "Log Relatorio Semanal (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

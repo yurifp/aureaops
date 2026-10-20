@@ -1,0 +1,217 @@
+{
+  "name": "AureaOps - Error Workflow (global)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "79b6ba6c-b676-4ac4-8312-9eef87b08e06",
+      "name": "Erro Detectado",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first().json || {};\nconst exec = j.execution || {};\nconst wf = (exec.workflow && (exec.workflow.name || exec.workflow.id)) || 'workflow desconhecido';\nconst erro = (exec.error && (exec.error.message || JSON.stringify(exec.error))) || 'erro nao detalhado';\nreturn [{ json: {\n  criado_em: new Date().toISOString(),\n  fluxo: 'F3',\n  evento: 'erro_workflow',\n  status: 'erro',\n  request_id: '',\n  http_status: '',\n  detalhe: JSON.stringify({ workflow: String(wf), execution_id: String(exec.id || ''), erro: String(erro).slice(0, 300) }),\n  workflow: String(wf),\n  url: String(exec.url || ''),\n  erro_texto: String(erro).slice(0, 400),\n  email_para: $env.GESTOR_EMAIL,\n  email_assunto: '[AureaOps] FALHA de automacao - ' + String(wf),\n  email_html: '<h2>Falha detectada em automacao</h2><p><b>Workflow:</b> ' + String(wf) + '</p>' +\n    '<p><b>Erro:</b> ' + String(erro).slice(0, 400) + '</p>' +\n    '<p><b>Execucao:</b> ' + String(exec.id || '') + '</p>' +\n    '<p><b>Console:</b> <a href=\"' + String(exec.url || '#') + '\">abrir no n8n</a></p>',\n  whats_body: { messaging_product: 'whatsapp', to: $env.GESTOR_WHATSAPP, type: 'template', template: { name: 'alerta_falha', language: { code: 'pt_BR' }, components: [{ type: 'body', parameters: [{ type: 'text', text: String(wf) }, { type: 'text', text: String(erro).slice(0, 100) }] }] } }\n}}];"
+      },
+      "id": "35e5a1c5-28f2-4e75-86fe-233433339029",
+      "name": "Preparar Alerta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c7f3b151-de63-43f3-81dc-b762e975060f",
+              "leftValue": "={{ $env.MODO_WHATSAPP }}",
+              "rightValue": "real",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "0b4ab886-f860-46b1-9155-aa70c1f2b4b4",
+      "name": "WhatsApp Real? (Alerta)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"https://graph.facebook.com/\" + $env.WHATSAPP_API_VERSION + \"/\" + $env.WHATSAPP_PHONE_NUMBER_ID + \"/messages\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.WHATSAPP_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.whats_body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "35551f55-0635-4152-ae94-1e70546b36a2",
+      "name": "WhatsApp Alerta (Real)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        120,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_USER }}",
+        "to": "={{ $json.email_para }}",
+        "subject": "={{ $json.email_assunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.email_html }}",
+        "options": {}
+      },
+      "id": "7c280544-acba-4749-af53-dcc7d88c214f",
+      "name": "Alerta Imediato (E-mail)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "criado_em": "={{ $json.criado_em }}",
+            "fluxo": "={{ $json.fluxo }}",
+            "evento": "={{ $json.evento }}",
+            "status": "={{ $json.status }}",
+            "request_id": "={{ $json.request_id }}",
+            "http_status": "={{ $json.http_status }}",
+            "detalhe": "={{ $json.detalhe }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "bd9f3f31-4b9d-4060-9733-0944188f093a",
+      "name": "Log Erro (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        600,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Erro Detectado": {
+      "main": [
+        [
+          {
+            "node": "Preparar Alerta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Alerta": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Real? (Alerta)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Real? (Alerta)": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Alerta (Real)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alerta Imediato (E-mail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Alerta (Real)": {
+      "main": [
+        [
+          {
+            "node": "Alerta Imediato (E-mail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alerta Imediato (E-mail)": {
+      "main": [
+        [
+          {
+            "node": "Log Erro (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

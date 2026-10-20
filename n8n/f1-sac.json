@@ -1,0 +1,1089 @@
+{
+  "name": "AureaOps F1 - SAC (chamados)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "f1-chamado",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "38f34ef2-9b56-44c0-87db-66dfd897e0ff",
+      "name": "Receber Chamado",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1400,
+        0
+      ],
+      "webhookId": "1e16616d-c878-453b-9d2b-ab3adb4598a3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const entrada = items[0].json;\nconst corpo = entrada.body || {};\nconst cabecalhos = entrada.headers || {};\nconst erros = {};\n\nconst esperada = $env.API_KEY_F1;\nconst recebida = cabecalhos['x-api-key'] || cabecalhos['X-Api-Key'];\nconst autenticado = Boolean(esperada) && recebida === esperada;\n\nconst uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst emailRegex = /^[^s@]+@[^s@]+.[^s@]+$/;\n\nif (!uuidRegex.test(String(corpo.request_id || ''))) erros.request_id = ['request_id deve ser um UUID v4.'];\nif (!corpo.nome || String(corpo.nome).trim().length < 3) erros.nome = ['Informe o nome completo.'];\nif (!emailRegex.test(String(corpo.email || ''))) erros.email = ['E-mail invalido.'];\nconst digitos = String(corpo.telefone || '').replace(/[^0-9]/g, '');\nif (digitos.length < 8) erros.telefone = ['Telefone invalido (com DDD).'];\nif (!/^PED-[0-9]{4}-[0-9]{4}$/.test(String(corpo.numero_pedido || ''))) erros.numero_pedido = ['Pedido no formato PED-2026-1001.'];\nif (!['troca','atraso','defeito','duvida'].includes(corpo.motivo)) erros.motivo = ['Motivo invalido.'];\nif (!corpo.descricao || String(corpo.descricao).trim().length < 10) erros.descricao = ['Descreva com pelo menos 10 caracteres.'];\nif (corpo.consentimento_lgpd !== true) erros.consentimento_lgpd = ['Consentimento LGPD obrigatorio.'];\n\nconst mapaSla = { defeito: ['alta', 4], troca: ['media', 24], atraso: ['media', 24], duvida: ['baixa', 72] };\nconst par = mapaSla[corpo.motivo] || ['', 0];\n\nreturn [{ json: {\n  autenticado,\n  erros,\n  chamado: {\n    request_id: corpo.request_id,\n    nome: String(corpo.nome || '').trim(),\n    email: String(corpo.email || '').trim().toLowerCase(),\n    telefone: String(corpo.telefone || '').trim(),\n    numero_pedido: String(corpo.numero_pedido || '').trim().toUpperCase(),\n    motivo: corpo.motivo || '',\n    descricao: String(corpo.descricao || '').trim(),\n    prioridade: par[0],\n    sla_horas: par[1]\n  }\n}}];"
+      },
+      "id": "ae520c73-f45b-4ed0-8e95-723050f53afa",
+      "name": "Validar e Classificar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "46579ffc-5a8a-4cfb-bf06-15e484d0a20c",
+              "leftValue": "={{ $json.autenticado }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "5a29d981-8132-4bb8-8b4d-82da9633dd09",
+      "name": "API Key Valida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -920,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ sucesso: false, codigo: 'ERRO_AUTENTICACAO', mensagem: 'Chave de integracao ausente ou invalida.', dados: null, request_id: null }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "ad01d87e-4e0c-4d1f-87bf-89fd98b0a14e",
+      "name": "Responder 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -700,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "8b60817f-b5d0-4533-85ee-e035ded7b88b",
+              "leftValue": "={{ Object.keys($json.erros).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "2db44f10-9581-4595-bcfe-06460d6dbe80",
+      "name": "Dados Validos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -700,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ sucesso: false, codigo: 'ERRO_VALIDACAO', mensagem: 'Dados invalidos.', dados: { erros: $('Validar e Classificar').first().json.erros }, request_id: $('Validar e Classificar').first().json.chamado.request_id }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "97189fb0-e229-4a14-8cb5-6b8d46180f12",
+      "name": "Responder 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -480,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "chamados",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "7ce3581e-aa82-49f8-aaa7-b4c2a4020d3c",
+      "name": "Ler Chamados (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -480,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const dados = $('Validar e Classificar').first().json;\nconst linhas = $input.all().map(function (i) { return i.json; });\nconst dup = linhas.find(function (l) {\n  return String(l.request_id || '') === String(dados.chamado.request_id || '');\n});\nreturn [{ json: { duplicado: Boolean(dup), protocolo_original: dup ? dup.protocolo : null } }];"
+      },
+      "id": "86a793cc-255d-4ddc-9fdb-5070994bcb36",
+      "name": "Verificar Duplicado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "da8b9f31-91bd-47b4-bee6-8de6a64ced04",
+              "leftValue": "={{ $json.duplicado }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "68759dd4-3ded-4884-9a59-520e954f304a",
+      "name": "Ja Registrado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -40,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ sucesso: true, codigo: 'OK', mensagem: 'Chamado ja registrado (reenvio ignorado).', dados: { protocolo: $json.protocolo_original, duplicado: true }, request_id: $('Validar e Classificar').first().json.chamado.request_id }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "d058a9b4-85e7-4238-8dd0-777eba1ecb00",
+      "name": "Responder Duplicado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        180,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "pedidos",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "6e90cb78-2f6c-455a-a8e8-8836a6163b13",
+      "name": "Ler Pedidos (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        180,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const dados = $('Validar e Classificar').first().json;\nconst c = dados.chamado;\nconst pedidos = $input.all().map(function (i) { return i.json; });\nconst pedido = pedidos.find(function (p) {\n  return String(p.numero_pedido || '').toUpperCase() === c.numero_pedido;\n});\nconst agora = new Date().toISOString();\nconst protocolo = 'SAC-' + agora.slice(0, 10).replace(/-/g, '') + '-' + String(Math.floor(1000 + Math.random() * 9000));\nreturn [{ json: {\n  protocolo: protocolo,\n  aberto_em: agora,\n  nome: c.nome,\n  email: c.email,\n  telefone: c.telefone,\n  numero_pedido: pedido ? c.numero_pedido : '',\n  motivo: c.motivo,\n  prioridade: c.prioridade,\n  sla_horas: c.sla_horas,\n  status: 'aberto',\n  descricao: c.descricao,\n  vinculo_pedido_ok: pedido ? 1 : 0,\n  escalado: 0,\n  request_id: c.request_id,\n  primeira_resposta_em: '',\n  resolvido_em: '',\n  created_at: agora\n}}];"
+      },
+      "id": "bb33193d-62c8-4498-93e7-e375d568e148",
+      "name": "Preparar Chamado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "chamados",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "8524e65a-03c1-45e4-8233-ea3feefc9fae",
+      "name": "Gravar Chamado (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        620,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "58f0a8b7-5ec0-4bb4-8889-bbcdc3fb3f68",
+              "name": "protocolo",
+              "value": "={{ $('Preparar Chamado').first().json.protocolo }}",
+              "type": "string"
+            },
+            {
+              "id": "2a43ba9e-343f-4660-8098-185ebbd28d91",
+              "name": "request_id",
+              "value": "={{ $('Preparar Chamado').first().json.request_id }}",
+              "type": "string"
+            },
+            {
+              "id": "44069681-08c9-452b-9a34-cf46f838c14f",
+              "name": "nome",
+              "value": "={{ $('Preparar Chamado').first().json.nome }}",
+              "type": "string"
+            },
+            {
+              "id": "b2a93779-5e77-480c-82c2-7126595ae7e2",
+              "name": "email",
+              "value": "={{ $('Preparar Chamado').first().json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "e2e43b2c-37b6-44f0-832d-a8afc24d7fb3",
+              "name": "telefone",
+              "value": "={{ $('Preparar Chamado').first().json.telefone }}",
+              "type": "string"
+            },
+            {
+              "id": "34f0b17b-1d27-430d-9106-e5deb867a03d",
+              "name": "numero_pedido",
+              "value": "={{ $('Preparar Chamado').first().json.numero_pedido }}",
+              "type": "string"
+            },
+            {
+              "id": "3f0631ed-a2af-4de6-bccf-c3673735187b",
+              "name": "motivo",
+              "value": "={{ $('Preparar Chamado').first().json.motivo }}",
+              "type": "string"
+            },
+            {
+              "id": "13baa7c9-76f1-4392-b46e-34128b5ec38e",
+              "name": "prioridade",
+              "value": "={{ $('Preparar Chamado').first().json.prioridade }}",
+              "type": "string"
+            },
+            {
+              "id": "9e4fe3d2-469c-4078-be0a-841f24a78ea4",
+              "name": "sla_horas",
+              "value": "={{ $('Preparar Chamado').first().json.sla_horas }}",
+              "type": "string"
+            },
+            {
+              "id": "b7af9b04-8b4f-418b-ae87-f150847c8210",
+              "name": "status",
+              "value": "={{ $('Preparar Chamado').first().json.status }}",
+              "type": "string"
+            },
+            {
+              "id": "6fb30703-9ef0-4de7-bc18-a7e06f64cefa",
+              "name": "descricao",
+              "value": "={{ $('Preparar Chamado').first().json.descricao }}",
+              "type": "string"
+            },
+            {
+              "id": "a9b08119-c137-43e2-984f-81f4da459ad1",
+              "name": "aberto_em",
+              "value": "={{ $('Preparar Chamado').first().json.aberto_em }}",
+              "type": "string"
+            },
+            {
+              "id": "c777209b-581f-46bd-b9c3-498ce45f55da",
+              "name": "vinculo_pedido_ok",
+              "value": "={{ $('Preparar Chamado').first().json.vinculo_pedido_ok }}",
+              "type": "string"
+            },
+            {
+              "id": "7f101602-8c02-498c-a0a8-6b6fbd95de49",
+              "name": "origem",
+              "value": "n8n_f1",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false
+      },
+      "id": "7f56e279-1e06-4b15-98bd-0fff2594aa81",
+      "name": "Preparar Base44",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        840,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BASE44_API_URL }}/chamado",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{ $env.BASE44_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "8a9f7d6d-0b46-412a-8ba9-3b874406f279",
+      "name": "Criar no Base44",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1060,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const chamado = $('Preparar Chamado').first().json;\nlet b44status = null;\ntry {\n  const r = $('Criar no Base44').first().json;\n  if (r.statusCode !== undefined) b44status = Number(r.statusCode);\n} catch (e) { b44status = null; }\nconst b44ok = b44status !== null && b44status >= 200 && b44status < 300;\nconst modoWhats = $env.MODO_WHATSAPP === 'real' ? 'real' : 'simulado';\nconst resumoWhats = 'Novo chamado ' + chamado.protocolo + ' (' + chamado.prioridade + ') - ' + chamado.motivo + ' - pedido ' + (chamado.numero_pedido || 'nao localizado') + ' - cliente ' + chamado.nome;\nconst destinatarioWhats = chamado.prioridade === 'alta' ? $env.GESTOR_WHATSAPP : $env.ATENDENTE_SAC_WHATSAPP;\nconst whatsBody = {\n  messaging_product: 'whatsapp',\n  to: destinatarioWhats,\n  type: 'template',\n  template: {\n    name: $env.WHATSAPP_TEMPLATE_CHAMADO || 'chamado_aberto',\n    language: { code: 'pt_BR' },\n    components: [{ type: 'body', parameters: [\n      { type: 'text', text: chamado.protocolo },\n      { type: 'text', text: chamado.motivo },\n      { type: 'text', text: chamado.prioridade }\n    ]}]\n  }\n};\nconst avisoHtml = '<h2>Novo chamado ' + chamado.protocolo + '</h2>' +\n  '<ul>' +\n  '<li><b>Prioridade:</b> ' + chamado.prioridade + ' (SLA ' + chamado.sla_horas + 'h)</li>' +\n  '<li><b>Motivo:</b> ' + chamado.motivo + '</li>' +\n  '<li><b>Cliente:</b> ' + chamado.nome + '</li>' +\n  '<li><b>Pedido:</b> ' + (chamado.numero_pedido || 'nao localizado') + '</li>' +\n  '<li><b>Base44:</b> ' + (b44ok ? 'gravado' : 'PENDENTE (nova tentativa via sync F2/lote)') + '</li>' +\n  '<li><b>WhatsApp:</b> ' + modoWhats + (modoWhats === 'simulado' ? ' - conteudo que seria enviado: <i>' + resumoWhats + '</i>' : '') + '</li>' +\n  '</ul>' +\n  '<p>' + chamado.descricao + '</p>';\nreturn [{ json: {\n  criado_em: new Date().toISOString(),\n  fluxo: 'F1',\n  evento: 'chamado_processado',\n  status: b44ok ? 'sucesso' : 'aviso',\n  request_id: chamado.request_id,\n  http_status: b44status === null ? '' : b44status,\n  detalhe: JSON.stringify({ base44_ok: b44ok, whatsapp: modoWhats, vinculo_pedido_ok: chamado.vinculo_pedido_ok }),\n  aviso_para: $env.ATENDENTE_SAC_EMAIL,\n  aviso_assunto: '[AureaOps] Novo chamado ' + chamado.protocolo + ' (' + chamado.prioridade + ')',\n  aviso_html: avisoHtml,\n  whats_para: destinatarioWhats,\n  whats_body: whatsBody\n}}];"
+      },
+      "id": "6266efde-137e-49e0-a584-6ff92aab1336",
+      "name": "Preparar Log e Avisos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "9f3e405f-e3ca-42d4-ad53-00d5369e95e6",
+              "leftValue": "={{ $env.MODO_WHATSAPP }}",
+              "rightValue": "real",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "04ed0a34-5a2f-4743-b0c7-12ac192e1a4b",
+      "name": "WhatsApp Real?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1500,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"https://graph.facebook.com/\" + $env.WHATSAPP_API_VERSION + \"/\" + $env.WHATSAPP_PHONE_NUMBER_ID + \"/messages\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.WHATSAPP_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.whats_body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "39ba3d3c-b29a-45d9-ab21-8a0cae53dab3",
+      "name": "Enviar WhatsApp (Cloud API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1720,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_USER }}",
+        "to": "={{ $env.ATENDENTE_SAC_EMAIL }}",
+        "subject": "={{ $json.aviso_assunto }}",
+        "emailFormat": "html",
+        "html": "={{ $json.aviso_html }}",
+        "options": {}
+      },
+      "id": "695d68d9-fec8-49ab-851b-0bccb8f743aa",
+      "name": "Avisar Atendente (E-mail)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1940,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "criado_em": "={{ $json.criado_em }}",
+            "fluxo": "={{ $json.fluxo }}",
+            "evento": "={{ $json.evento }}",
+            "status": "={{ $json.status }}",
+            "request_id": "={{ $json.request_id }}",
+            "http_status": "={{ $json.http_status }}",
+            "detalhe": "={{ $json.detalhe }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "6df9292c-00e0-4746-88f1-c47c28d72c5d",
+      "name": "Registrar Log (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2160,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ sucesso: true, codigo: 'OK', mensagem: 'Chamado registrado com sucesso.', dados: { protocolo: $('Preparar Chamado').first().json.protocolo }, request_id: $('Preparar Chamado').first().json.request_id }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "ec2c3c48-208d-47b1-8b71-4d2682b713b0",
+      "name": "Responder 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2380,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "8f0c0c72-21ec-4198-90fd-2228a11c11a8",
+      "name": "SLA - A Cada Hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "chamados",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "bc3e7fcf-2d11-4c64-b290-c6a58d9c6e82",
+      "name": "Ler Chamados (SLA)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1160,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const linhas = $input.all().map(function (i) { return i.json; });\nconst agora = Date.now();\nconst vencidos = linhas.filter(function (l) {\n  const aberto = Date.parse(String(l.aberto_em || ''));\n  if (isNaN(aberto)) return false;\n  const horas = (agora - aberto) / 3600000;\n  return !['resolvido', 'cancelado'].includes(String(l.status)) &&\n    Number(l.escalado) === 0 &&\n    horas > Number(l.sla_horas || 0);\n});\nreturn vencidos.map(function (l) {\n  return { json: {\n    request_id: l.request_id,\n    protocolo: l.protocolo,\n    prioridade: l.prioridade,\n    motivo: l.motivo,\n    sla_horas: l.sla_horas,\n    aberto_em: l.aberto_em,\n    nome: l.nome,\n    horas_vencidas: Math.round(((agora - Date.parse(l.aberto_em)) / 3600000) * 10) / 10\n  }};\n});"
+      },
+      "id": "69a4ad01-5310-4952-839d-95a39f3b869a",
+      "name": "Avaliar SLA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -920,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "6d73cb88-7d01-42a2-a7a6-602dfec85dc2",
+              "leftValue": "={{ $env.MODO_WHATSAPP }}",
+              "rightValue": "real",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "36c8be8b-2e37-49f3-bd05-01f299b74488",
+      "name": "WhatsApp Real? (SLA)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"https://graph.facebook.com/\" + $env.WHATSAPP_API_VERSION + \"/\" + $env.WHATSAPP_PHONE_NUMBER_ID + \"/messages\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.WHATSAPP_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $env.GESTOR_WHATSAPP, type: 'template', template: { name: $env.WHATSAPP_TEMPLATE_CHAMADO || 'chamado_aberto', language: { code: 'pt_BR' }, components: [{ type: 'body', parameters: [{ type: 'text', text: 'SLA vencido ' + $json.protocolo }, { type: 'text', text: $json.horas_vencidas + 'h' }, { type: 'text', text: $json.prioridade }] }] } }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "716a4390-4727-415b-8cd8-a19fde99defe",
+      "name": "WhatsApp SLA (Cloud API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_USER }}",
+        "to": "={{ $env.GESTOR_EMAIL }}",
+        "subject": "={{ '[AureaOps] SLA vencido - ' + $json.protocolo }}",
+        "emailFormat": "html",
+        "html": "={{ '<h2>SLA vencido: ' + $json.protocolo + '</h2><p>Aberto ha ' + $json.horas_vencidas + 'h (SLA ' + $json.sla_horas + 'h / prioridade ' + $json.prioridade + ').</p><p>Motivo: ' + $json.motivo + '. Cliente: ' + $json.nome + '.</p>' + ($env.MODO_WHATSAPP === 'real' ? '' : '<p><i>WhatsApp simulado - conteudo equivalente entregue neste e-mail.</i></p>') }}",
+        "options": {}
+      },
+      "id": "a744c2a3-b1ad-408e-964a-c559341626de",
+      "name": "Escalonar por E-mail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "chamados",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "request_id": "={{ $json.request_id }}",
+            "escalado": 1
+          },
+          "matchingColumns": [
+            "request_id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "675ff0a9-b663-4fef-9b07-a2871fd47fc9",
+      "name": "Marcar Escalado (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -40,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_SHEETS_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "logs",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "criado_em": "={{ new Date().toISOString() }}",
+            "fluxo": "F1",
+            "evento": "sla_escalonamento",
+            "status": "aviso",
+            "request_id": "={{ $json.request_id }}",
+            "http_status": "",
+            "detalhe": "={{ JSON.stringify({ protocolo: $json.protocolo, horas_vencidas: $json.horas_vencidas, prioridade: $json.prioridade }) }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "41fa5b23-efd0-415e-a9f3-463a24d00fb4",
+      "name": "Log SLA (Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        180,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Receber Chamado": {
+      "main": [
+        [
+          {
+            "node": "Validar e Classificar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar e Classificar": {
+      "main": [
+        [
+          {
+            "node": "API Key Valida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Key Valida?": {
+      "main": [
+        [
+          {
+            "node": "Dados Validos?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dados Validos?": {
+      "main": [
+        [
+          {
+            "node": "Ler Chamados (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Chamados (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Verificar Duplicado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Duplicado": {
+      "main": [
+        [
+          {
+            "node": "Ja Registrado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ja Registrado?": {
+      "main": [
+        [
+          {
+            "node": "Responder Duplicado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ler Pedidos (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Pedidos (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Preparar Chamado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Chamado": {
+      "main": [
+        [
+          {
+            "node": "Gravar Chamado (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gravar Chamado (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Preparar Base44",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Base44": {
+      "main": [
+        [
+          {
+            "node": "Criar no Base44",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar no Base44": {
+      "main": [
+        [
+          {
+            "node": "Preparar Log e Avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Log e Avisos": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Real?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Real?": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp (Cloud API)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Avisar Atendente (E-mail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp (Cloud API)": {
+      "main": [
+        [
+          {
+            "node": "Avisar Atendente (E-mail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar Atendente (E-mail)": {
+      "main": [
+        [
+          {
+            "node": "Registrar Log (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar Log (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Responder 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SLA - A Cada Hora": {
+      "main": [
+        [
+          {
+            "node": "Ler Chamados (SLA)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler Chamados (SLA)": {
+      "main": [
+        [
+          {
+            "node": "Avaliar SLA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avaliar SLA": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Real? (SLA)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Real? (SLA)": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp SLA (Cloud API)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Escalonar por E-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp SLA (Cloud API)": {
+      "main": [
+        [
+          {
+            "node": "Escalonar por E-mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalonar por E-mail": {
+      "main": [
+        [
+          {
+            "node": "Marcar Escalado (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar Escalado (Sheets)": {
+      "main": [
+        [
+          {
+            "node": "Log SLA (Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

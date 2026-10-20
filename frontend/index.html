@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AureaOps — Demonstração</title>
+  <meta name="description" content="Demonstração do projeto AureaOps: central de atendimento, leads e relatórios para um e-commerce fictício.">
+  <!--
+    Página inicial da demonstração pública (Vercel).
+    Os formulários funcionam de ponta a ponta quando os blocos CONFIG de cada
+    página recebem a URL do webhook e a API Key (ver README). Sem isso, o envio
+    responde com o painel "não configurado" — comportamento degradado proposital.
+  -->
+  <style>
+    :root {
+      --areia: #faf7f2; --tinta: #2b2620; --tinta-suave: #5c5348;
+      --dourado: #8a6014; --borda: #d9d2c7; --ok: #1e6b34; --fundo-ok: #e8f5ec;
+      --raio: 10px; --fonte: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--fonte); color: var(--tinta); background: var(--areia); line-height: 1.6; }
+    .pagina { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+    header { border-bottom: 3px solid var(--dourado); margin-bottom: 28px; padding-bottom: 18px; }
+    .marca { font-size: 1.4rem; font-weight: 700; }
+    .marca span { color: var(--dourado); }
+    header p { margin: 4px 0 0; color: var(--tinta-suave); }
+    h1 { font-size: 1.5rem; margin: 0 0 8px; }
+    .intro { color: var(--tinta-suave); }
+    .cartoes { display: grid; gap: 16px; margin: 24px 0; }
+    @media (min-width: 560px) { .cartoes { grid-template-columns: 1fr 1fr; } }
+    a.cartao {
+      display: block; background: #fff; border: 1px solid var(--borda); border-radius: var(--raio);
+      padding: 18px; text-decoration: none; color: var(--tinta);
+    }
+    a.cartao:hover, a.cartao:focus-visible { border-color: var(--dourado); box-shadow: 0 2px 8px rgba(138,96,20,.15); }
+    a.cartao:focus-visible { outline: 3px solid var(--dourado); outline-offset: 2px; }
+    .cartao strong { display: block; font-size: 1.05rem; margin-bottom: 4px; }
+    .cartao span { color: var(--tinta-suave); font-size: .92rem; }
+    .nota { background: var(--fundo-ok); border: 1px solid var(--ok); color: var(--ok);
+            border-radius: var(--raio); padding: 12px 16px; font-size: .92rem; }
+    ul.fluxos { margin: 16px 0 0; padding-left: 20px; color: var(--tinta-suave); font-size: .95rem; }
+    footer { margin-top: 32px; font-size: .82rem; color: var(--tinta-suave); }
+    footer a { color: var(--dourado); }
+  </style>
+</head>
+<body>
+  <div class="pagina">
+    <header>
+      <p class="marca">Aurea<span>Home</span> · AureaOps</p>
+      <p>Central de Atendimento, Leads e Relatórios — projeto de portfólio</p>
+    </header>
+
+    <main>
+      <h1>Demonstração pública</h1>
+      <p class="intro">Empresa fictícia de casa e decoração. Esta página é a vitrine do
+        repositório: os dois formulários abaixo são as entradas reais dos fluxos
+        F1 (SAC) e F2 (Comercial/Marketing).</p>
+
+      <div class="cartoes">
+        <a class="cartao" href="chamado.html">
+          <strong>F1 · Abrir um chamado</strong>
+          <span>Troca, atraso, defeito ou dúvida → webhook n8n, SLA e escalonamento.</span>
+        </a>
+        <a class="cartao" href="lead.html">
+          <strong>F2 · Falar com um consultor</strong>
+          <span>Captura de lead com UTMs → Apps Script, round-robin e follow-up.</span>
+        </a>
+      </div>
+
+      <p class="nota"><strong>Estado desta demonstração:</strong> os formulários estão
+        publicados sem as chaves de integração (por segurança — a API Key do
+        webhook só entra quando há um back-end configurado). Um envio aqui
+        responde com o aviso "não configurado". A lógica completa roda no
+        ambiente local descrito no README.</p>
+
+      <p class="intro" style="margin-top:24px">O que a automação faz atrás dos formulários:</p>
+      <ul class="fluxos">
+        <li><strong>F1:</strong> validação + idempotência por <code>request_id</code>, gravação em Google Sheets e Base44, aviso ao atendente e SLA horário (alta 4h · média 24h · baixa 72h).</li>
+        <li><strong>F2:</strong> distribuição round-robin entre vendedores, payload arquivado no Drive, follow-up automático D+1/D+3.</li>
+        <li><strong>F3:</strong> resumos diários/semanais por e-mail e WhatsApp (modo simulado) + alerta imediato em qualquer falha.</li>
+      </ul>
+    </main>
+
+    <footer>
+      Projeto <a href="https://github.com/yurifp/aureaops">yurifp/aureaops</a> ·
+      dados 100% fictícios · stack: HTML/CSS/JS, n8n, Google Apps Script, Base44,
+      WhatsApp Cloud API, SQL e Excel.
+    </footer>
+  </div>
+</body>
+</html>

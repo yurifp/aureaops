@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aureaops.example/schemas/f1-chamado.schema.json",
+  "title": "F1 — Abertura de chamado (SAC)",
+  "description": "Payload enviado por frontend/chamado.html ao webhook do n8n (POST /webhook/f1-chamado). Header obrigatório: X-Api-Key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "nome", "email", "telefone", "numero_pedido", "motivo", "descricao", "consentimento_lgpd"],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUID v4 gerado no cliente; garante idempotência em reenvios."
+    },
+    "nome": { "type": "string", "minLength": 3, "maxLength": 120 },
+    "email": { "type": "string", "format": "email", "maxLength": 160 },
+    "telefone": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 20,
+      "description": "Aceita (00) 90000-0101 ou +5500900000101."
+    },
+    "numero_pedido": { "type": "string", "pattern": "^PED-[0-9]{4}-[0-9]{4}$" },
+    "motivo": { "enum": ["troca", "atraso", "defeito", "duvida"] },
+    "descricao": { "type": "string", "minLength": 10, "maxLength": 2000 },
+    "consentimento_lgpd": { "const": true }
+  }
+}

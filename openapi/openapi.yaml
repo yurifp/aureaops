@@ -1,0 +1,292 @@
+openapi: 3.0.3
+info:
+  title: AureaOps — API de integração (F1 e F2)
+  version: 1.0.0
+  description: |
+    Contratos dos endpoints expostos pelo projeto AureaOps.
+
+    * `POST /webhook/f1-chamado` — webhook do **n8n** (F1, abertura de chamado).
+      Servidor: variável `n8nBase` (ex.: `https://seu-n8n.exemplo`).
+    * `POST /exec` — Web App do **Google Apps Script** (F2, captura de lead).
+      Servidor: variável `gasBase` (`https://script.google.com/macros/s/SEU_ID`).
+      Limitação da plataforma: Web Apps sempre respondem **HTTP 200**; o código
+      de negócio viaja no campo `codigo` do corpo. A autenticação aceita
+      `X-Api-Key` **ou** `?api_key=` (o evento doPost não expõe headers custom).
+    * `POST /chamado` e `POST /lead` — API do **Base44** (consumida pelo n8n e
+      pelo Apps Script; documentada aqui para rastreabilidade, habilitada com a
+      API Key do app).
+
+    Todos os payloads de entrada estão espelhados em `docs/schemas/*.json`.
+servers:
+  - url: '{n8nBase}/webhook'
+    description: n8n (F1)
+    variables:
+      n8nBase:
+        default: https://seu-n8n.exemplo
+  - url: '{gasBase}'
+    description: Google Apps Script Web App (F2)
+    variables:
+      gasBase:
+        default: https://script.google.com/macros/s/SEU_DEPLOYMENT_ID
+  - url: '{base44Base}'
+    description: Base44 (interna)
+    variables:
+      base44Base:
+        default: https://app.base44.com/api/apps/SEU_APP_ID/resources
+
+tags:
+  - name: F1 - SAC
+  - name: F2 - Leads
+  - name: Infra
+
+paths:
+  /f1-chamado:
+    post:
+      tags: [F1 - SAC]
+      summary: Abre um chamado de pós-venda
+      description: |
+        Chamado pelo `frontend/chamado.html`. Valida API Key, campos e
+        consentimento; garante idempotência por `request_id`; grava no
+        Google Sheets e no Base44; notifica o atendente (WhatsApp simulado/real
+        + e-mail). Respostas de erro usam HTTP real (401/400/500).
+      security:
+        - apiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChamadoRequest'
+            examples:
+              valido:
+                value:
+                  request_id: 3f8b2c74-9d1e-4a6b-8f2c-1a2b3c4d5e6f
+                  nome: Mariana Duarte
+                  email: mariana.duarte@example.com
+                  telefone: (00) 90000-0101
+                  numero_pedido: PED-2026-1001
+                  motivo: defeito
+                  descricao: Cadeira chegou com o braço riscado e soltando parafuso.
+                  consentimento_lgpd: true
+      responses:
+        '200':
+          description: Chamado criado (ou reenvio idempotente)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RespostaPadrao' }
+              example:
+                sucesso: true
+                codigo: OK
+                mensagem: Chamado registrado com sucesso.
+                dados: { protocolo: SAC-20261020-0007 }
+                request_id: 3f8b2c74-9d1e-4a6b-8f2c-1a2b3c4d5e6f
+        '400': { $ref: '#/components/responses/ErroValidacao' }
+        '401': { $ref: '#/components/responses/ErroAutenticacao' }
+        '500': { $ref: '#/components/responses/ErroInterno' }
+
+  /exec:
+    post:
+      tags: [F2 - Leads]
+      summary: Registra um lead com UTMs (Web App Apps Script)
+      description: |
+        Chamado pelo `frontend/lead.html`. Autentica por `X-Api-Key` OU
+        `?api_key=`; valida, garante idempotência, grava em Sheets + Drive,
+        distribui por round-robin e espelha no Base44 com retry. **Responde
+        sempre HTTP 200** — trate o campo `codigo` do corpo.
+      security:
+        - apiKeyQuery: []
+        - apiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LeadRequest' }
+      responses:
+        '200':
+          description: Sempre 200 (limitação do Apps Script); leia `codigo`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RespostaPadrao' }
+              examples:
+                ok:
+                  value:
+                    sucesso: true
+                    codigo: OK
+                    mensagem: Lead registrado e distribuído.
+                    dados: { protocolo: LED-20261020-0003, vendedor: Ana Souza }
+                    request_id: 7c1d9e42-33aa-4c11-9f0e-5d6e7f8a9b0c
+                validacao:
+                  value:
+                    sucesso: false
+                    codigo: ERRO_VALIDACAO
+                    mensagem: Dados inválidos.
+                    dados:
+                      erros: { consentimento_lgpd: [Consentimento LGPD obrigatório.] }
+                    request_id: 7c1d9e42-33aa-4c11-9f0e-5d6e7f8a9b0c
+    get:
+      tags: [Infra]
+      summary: Saúde do serviço F2
+      description: '`?action=status` (livre) ou `?action=resumo` (exige api_key).'
+      parameters:
+        - in: query
+          name: action
+          schema: { type: string, enum: [status, resumo] }
+          default: status
+      responses:
+        '200':
+          description: Estado do serviço
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RespostaPadrao' }
+
+  /chamado:
+    post:
+      tags: [Infra]
+      summary: Cria chamado no Base44 (interno — chamado pelo n8n)
+      security: [{ apiKeyHeader: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChamadoInterno' }
+      responses:
+        '200': { description: Criado }
+        '401': { $ref: '#/components/responses/ErroAutenticacao' }
+        '503': { description: Indisponível — n8n registra aviso e segue (sync posterior) }
+
+  /lead:
+    post:
+      tags: [Infra]
+      summary: Cria lead no Base44 (interno — Apps Script e sync n8n)
+      security: [{ apiKeyHeader: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LeadInterno' }
+      responses:
+        '200': { description: Criado }
+        '401': { $ref: '#/components/responses/ErroAutenticacao' }
+        '503': { description: Indisponível — Apps Script marca base44_sync=0 }
+
+components:
+  securitySchemes:
+    apiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: Chave por fluxo (API_KEY_F1 no n8n; API_KEY_LEADS no Apps Script).
+    apiKeyQuery:
+      type: apiKey
+      in: query
+      name: api_key
+      description: Alternativa para o Apps Script, que não expõe headers custom.
+
+  responses:
+    ErroValidacao:
+      description: Campo inválido ou consentimento ausente
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/RespostaPadrao' }
+          example:
+            sucesso: false
+            codigo: ERRO_VALIDACAO
+            mensagem: Dados inválidos.
+            dados:
+              erros: { email: [E-mail inválido.] }
+            request_id: 3f8b2c74-9d1e-4a6b-8f2c-1a2b3c4d5e6f
+    ErroAutenticacao:
+      description: API Key ausente ou inválida
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/RespostaPadrao' }
+          example:
+            sucesso: false
+            codigo: ERRO_AUTENTICACAO
+            mensagem: Chave de integração ausente ou inválida.
+            dados: null
+            request_id: null
+    ErroInterno:
+      description: Exceção inesperada (registrada em logs_integracao)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/RespostaPadrao' }
+
+  schemas:
+    ChamadoRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, nome, email, telefone, numero_pedido, motivo, descricao, consentimento_lgpd]
+      properties:
+        request_id: { type: string, format: uuid }
+        nome: { type: string, minLength: 3, maxLength: 120 }
+        email: { type: string, format: email }
+        telefone: { type: string, minLength: 8, maxLength: 20 }
+        numero_pedido: { type: string, pattern: '^PED-[0-9]{4}-[0-9]{4}$' }
+        motivo: { type: string, enum: [troca, atraso, defeito, duvida] }
+        descricao: { type: string, minLength: 10, maxLength: 2000 }
+        consentimento_lgpd: { type: boolean, enum: [true] }
+    LeadRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, nome, email, telefone, consentimento_lgpd]
+      properties:
+        request_id: { type: string, format: uuid }
+        nome: { type: string, minLength: 3, maxLength: 120 }
+        email: { type: string, format: email }
+        telefone: { type: string, minLength: 8, maxLength: 20 }
+        interesse: { type: string, maxLength: 120 }
+        mensagem: { type: string, maxLength: 1000 }
+        utm_source: { type: string }
+        utm_medium: { type: string }
+        utm_campaign: { type: string }
+        utm_term: { type: string }
+        utm_content: { type: string }
+        consentimento_lgpd: { type: boolean, enum: [true] }
+    ChamadoInterno:
+      type: object
+      description: Payload que o n8n envia ao Base44 (espelho do chamado).
+      properties:
+        protocolo: { type: string }
+        request_id: { type: string, format: uuid }
+        nome: { type: string }
+        email: { type: string }
+        telefone: { type: string }
+        numero_pedido: { type: string }
+        motivo: { type: string }
+        prioridade: { type: string }
+        sla_horas: { type: integer }
+        status: { type: string }
+        descricao: { type: string }
+        aberto_em: { type: string, format: date-time }
+        vinculo_pedido_ok: { type: integer }
+        origem: { type: string }
+    LeadInterno:
+      type: object
+      description: Payload que o Apps Script/n8n enviam ao Base44.
+      properties:
+        request_id: { type: string, format: uuid }
+        protocolo: { type: string }
+        nome: { type: string }
+        email: { type: string }
+        telefone: { type: string }
+        interesse: { type: string }
+        mensagem: { type: string }
+        utm_source: { type: string }
+        utm_medium: { type: string }
+        utm_campaign: { type: string }
+        consentimento_lgpd: { type: boolean }
+        status: { type: string }
+        vendedor: { type: string }
+        origem: { type: string }
+    RespostaPadrao:
+      type: object
+      required: [sucesso, codigo, mensagem]
+      properties:
+        sucesso: { type: boolean }
+        codigo:
+          type: string
+          enum: [OK, ERRO_AUTENTICACAO, ERRO_VALIDACAO, ERRO_DUPLICADO, ERRO_INTERNO]
+        mensagem: { type: string }
+        dados:
+          nullable: true
+          description: 'Ex.: { protocolo, vendedor, duplicado } ou { erros: {...} }'
+        request_id: { type: string, nullable: true }

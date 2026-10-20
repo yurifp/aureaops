@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aureaops.example/schemas/f2-lead.schema.json",
+  "title": "F2 — Captação de lead (Comercial + Marketing)",
+  "description": "Payload enviado por frontend/lead.html ao Web App do Apps Script (doPost). Header X-Api-Key (ou query param api_key — Apps Script não expõe headers custom).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "nome", "email", "telefone", "consentimento_lgpd"],
+  "properties": {
+    "request_id": { "type": "string", "format": "uuid" },
+    "nome": { "type": "string", "minLength": 3, "maxLength": 120 },
+    "email": { "type": "string", "format": "email", "maxLength": 160 },
+    "telefone": { "type": "string", "minLength": 8, "maxLength": 20 },
+    "interesse": { "type": "string", "maxLength": 120 },
+    "mensagem": { "type": "string", "maxLength": 1000 },
+    "utm_source": { "type": "string", "maxLength": 60 },
+    "utm_medium": { "type": "string", "maxLength": 60 },
+    "utm_campaign": { "type": "string", "maxLength": 100 },
+    "utm_term": { "type": "string", "maxLength": 60 },
+    "utm_content": { "type": "string", "maxLength": 60 },
+    "consentimento_lgpd": { "const": true }
+  }
+}

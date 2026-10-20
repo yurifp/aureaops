@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fale com um consultor — Aurea Home</title>
+  <meta name="description" content="Deixe seus dados e um consultor da Aurea Home entra em contato. Decoração para toda a casa.">
+  <!--
+    F2 — Formulário de captura de lead (Comercial + Marketing)
+    Envio: fetch POST JSON para o Web App do Google Apps Script (doPost).
+    UTMs: lidas da URL (?utm_...), persistidas em sessionStorage e enviadas
+    no payload — assim a origem sobrevive à navegação entre páginas.
+
+    SOBRE A API KEY NO FRONT-END (limites e mitigação):
+    - Chave no navegador é pública por definição: identifica a ORIGEM, não a pessoa.
+    - Mitigações: escopo mínimo (só cria lead), idempotência por request_id,
+      validação server-side igual à do cliente, honeypot e rotação da chave
+      (docs/seguranca.md).
+    - DETALHE do Apps Script: Web Apps SEMPRE respondem HTTP 200; o código de
+      negócio vem no campo "codigo" do corpo. Por isso este formulário decide
+      pelo corpo da resposta, não pelo status HTTP.
+  -->
+  <style>
+    :root {
+      --areia: #faf7f2;
+      --tinta: #2b2620;
+      --tinta-suave: #5c5348;
+      --dourado: #8a6014;
+      --borda: #d9d2c7;
+      --erro: #a3271f;
+      --fundo-erro: #fdeceb;
+      --ok: #1e6b34;
+      --fundo-ok: #e8f5ec;
+      --raio: 10px;
+      --fonte: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--fonte); color: var(--tinta); background: var(--areia); line-height: 1.55; }
+    .pagina { max-width: 620px; margin: 0 auto; padding: 24px 16px 56px; }
+    header { border-bottom: 3px solid var(--dourado); margin-bottom: 24px; padding-bottom: 16px; }
+    .marca { font-size: 1.35rem; font-weight: 700; }
+    .marca span { color: var(--dourado); }
+    header p { margin: 4px 0 0; color: var(--tinta-suave); font-size: .95rem; }
+    h1 { font-size: 1.25rem; margin: 0 0 4px; }
+    .intro { margin: 0 0 20px; color: var(--tinta-suave); }
+
+    fieldset { border: 1px solid var(--borda); border-radius: var(--raio); padding: 16px; margin: 0 0 18px; background: #fff; }
+    legend { font-weight: 600; padding: 0 6px; }
+    .campo { margin-bottom: 16px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    .opcional { font-weight: 400; color: var(--tinta-suave); font-size: .85rem; }
+    input[type="text"], input[type="email"], input[type="tel"], textarea {
+      width: 100%; padding: 10px 12px; font: inherit; color: var(--tinta);
+      border: 1px solid var(--borda); border-radius: var(--raio); background: #fff;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    input:focus-visible, textarea:focus-visible, button:focus-visible {
+      outline: 3px solid var(--dourado); outline-offset: 1px;
+    }
+    input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--erro); background: var(--fundo-erro); }
+    .campo-erro { color: var(--erro); font-size: .88rem; margin: 4px 0 0; }
+
+    .consenso { display: flex; gap: 10px; align-items: flex-start; }
+    .consenso input { width: 18px; height: 18px; margin-top: 3px; flex-shrink: 0; }
+    .consenso label { font-weight: 400; font-size: .92rem; }
+
+    button { width: 100%; padding: 14px; font: inherit; font-weight: 700; color: #fff;
+             background: var(--tinta); border: 0; border-radius: var(--raio); cursor: pointer; }
+    button[disabled] { opacity: .65; cursor: progress; }
+
+    .painel { border-radius: var(--raio); padding: 14px 16px; margin-bottom: 20px; }
+    .painel[hidden] { display: none; }
+    .painel-ok { background: var(--fundo-ok); border: 1px solid var(--ok); color: var(--ok); }
+    .painel-erro { background: var(--fundo-erro); border: 1px solid var(--erro); color: var(--erro); }
+    .painel strong.protocolo { font-size: 1.1rem; letter-spacing: .5px; }
+
+    .campo-honeypot { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+    .utms { border: 0; padding: 0; margin: 0 0 8px; }
+    footer { margin-top: 28px; font-size: .8rem; color: var(--tinta-suave); }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+  </style>
+</head>
+<body>
+  <div class="pagina">
+    <header>
+      <p class="marca">Aurea<span>Home</span></p>
+      <p>Decoração e casa · Fale com um consultor</p>
+    </header>
+
+    <main>
+      <h1>Receba ajuda de um especialista</h1>
+      <p class="intro">Montando a casa nova ou reformando? Deixe seu contato:
+        um consultor retorna em até 1 dia útil com sugestões para o seu projeto.</p>
+
+      <div id="painel-sucesso" class="painel painel-ok" role="status" aria-live="polite" hidden></div>
+      <div id="painel-erro" class="painel painel-erro" role="alert" hidden></div>
+
+      <form id="form-lead" novalidate>
+        <div class="campo-honeypot" aria-hidden="true">
+          <label for="website">Não preencha este campo</label>
+          <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+        </div>
+
+        <!-- UTMs preenchidas pelo script; permanecem no DOM para inspeção/depuração. -->
+        <fieldset class="utms" aria-hidden="true">
+          <input type="hidden" id="utm_source" name="utm_source">
+          <input type="hidden" id="utm_medium" name="utm_medium">
+          <input type="hidden" id="utm_campaign" name="utm_campaign">
+          <input type="hidden" id="utm_term" name="utm_term">
+          <input type="hidden" id="utm_content" name="utm_content">
+        </fieldset>
+
+        <div class="campo">
+          <label for="nome">Nome completo</label>
+          <input type="text" id="nome" name="nome" autocomplete="name" required minlength="3" maxlength="120" aria-describedby="erro-nome">
+          <p class="campo-erro" id="erro-nome"></p>
+        </div>
+
+        <div class="campo">
+          <label for="email">E-mail</label>
+          <input type="email" id="email" name="email" autocomplete="email" required maxlength="160" aria-describedby="erro-email">
+          <p class="campo-erro" id="erro-email"></p>
+        </div>
+
+        <div class="campo">
+          <label for="telefone">Telefone com DDD</label>
+          <input type="tel" id="telefone" name="telefone" autocomplete="tel" required minlength="8" maxlength="20" inputmode="tel" aria-describedby="dica-telefone erro-telefone">
+          <p class="dica" id="dica-telefone" style="font-size:.82rem;color:var(--tinta-suave);margin:4px 0 0;">Exemplo: (00) 90000-0102</p>
+          <p class="campo-erro" id="erro-telefone"></p>
+        </div>
+
+        <div class="campo">
+          <label for="interesse">O que você procura? <span class="opcional">(opcional)</span></label>
+          <input type="text" id="interesse" name="interesse" maxlength="120" aria-describedby="erro-interesse">
+          <p class="campo-erro" id="erro-interesse"></p>
+        </div>
+
+        <div class="campo">
+          <label for="mensagem">Mensagem <span class="opcional">(opcional)</span></label>
+          <textarea id="mensagem" name="mensagem" maxlength="1000" aria-describedby="erro-mensagem"></textarea>
+          <p class="campo-erro" id="erro-mensagem"></p>
+        </div>
+
+        <fieldset>
+          <legend>Consentimento (LGPD)</legend>
+          <div class="consenso">
+            <input type="checkbox" id="consentimento_lgpd" name="consentimento_lgpd" required>
+            <label for="consentimento_lgpd">Autorizo o contato da Aurea Home por e-mail,
+              telefone ou WhatsApp com fins comerciais, conforme a LGPD. Posso solicitar
+              exclusão a qualquer momento.</label>
+          </div>
+          <p class="campo-erro" id="erro-consentimento"></p>
+        </fieldset>
+
+        <button type="submit" id="botao-enviar">Quero falar com um consultor</button>
+      </form>
+    </main>
+
+    <footer>
+      Aurea Home · Empresa fictícia do projeto AureaOps (portfólio).
+      Sua origem de acesso (UTM) é registrada para medir campanhas.
+    </footer>
+  </div>
+
+  <script>
+    'use strict';
+    /* ======================================================================
+       CONFIGURAÇÃO — TODO(manual)
+       1) WEBHOOK_URL: URL do Web App publicado no Apps Script
+          (ex.: https://script.google.com/macros/s/SEU_ID/exec)
+       2) API_KEY: o valor de API_KEY_F2 / API_KEY_LEADS
+       Observação: o Apps Script não expõe headers custom no evento doPost,
+       então a chave também pode viajar como ?api_key= na URL abaixo.
+       ====================================================================== */
+    const CONFIG = {
+      WEBHOOK_URL: '',
+      API_KEY: ''
+    };
+
+    const TIMEOUT_MS = 20000;
+    const RETENTATIVAS = 2;
+    const form = document.getElementById('form-lead');
+    const botao = document.getElementById('botao-enviar');
+    const painelOk = document.getElementById('painel-sucesso');
+    const painelErro = document.getElementById('painel-erro');
+    const CHAVES_UTM = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'];
+
+    /* ---------- Captura de UTM (URL → sessionStorage → campos ocultos) -------- */
+    function capturarUtms() {
+      let utms = {};
+      const params = new URLSearchParams(window.location.search);
+      CHAVES_UTM.forEach((chave) => {
+        const valor = params.get(chave);
+        if (valor) utms[chave] = valor.slice(0, 60);
+      });
+      if (Object.keys(utms).length === 0) {
+        try { utms = JSON.parse(sessionStorage.getItem('aureaops_utms') || '{}'); }
+        catch (_) { utms = {}; }
+      } else {
+        try { sessionStorage.setItem('aureaops_utms', JSON.stringify(utms)); } catch (_) {}
+      }
+      CHAVES_UTM.forEach((chave) => {
+        document.getElementById(chave).value = utms[chave] || '';
+      });
+    }
+    capturarUtms();
+
+    function uuidv4() {
+      if (crypto.randomUUID) return crypto.randomUUID();
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+      });
+    }
+
+    function mostrarErroCampo(id, mensagem) {
+      const alvo = document.getElementById(id);
+      const campo = alvo.closest('.campo') || alvo.closest('fieldset');
+      const entrada = campo ? campo.querySelector('input,textarea') : null;
+      alvo.textContent = mensagem || '';
+      if (entrada) entrada.setAttribute('aria-invalid', mensagem ? 'true' : 'false');
+    }
+
+    function limparErrosCampos() {
+      ['erro-nome', 'erro-email', 'erro-telefone', 'erro-interesse',
+       'erro-mensagem', 'erro-consentimento'].forEach((id) => mostrarErroCampo(id, ''));
+    }
+
+    function validarFormulario(dados) {
+      const erros = {};
+      if (!dados.nome || dados.nome.trim().length < 3) erros.nome = 'Informe seu nome completo.';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dados.email || '')) erros.email = 'Informe um e-mail válido.';
+      if (!dados.telefone || dados.telefone.replace(/\D/g, '').length < 8) erros.telefone = 'Informe um telefone com DDD.';
+      if (!dados.consentimento_lgpd) erros.consentimento_lgpd = 'Precisamos do seu consentimento para entrar em contato (LGPD).';
+      return erros;
+    }
+
+    function exibirErrosServidor(erros) {
+      const mapa = { nome: 'erro-nome', email: 'erro-email', telefone: 'erro-telefone',
+                     interesse: 'erro-interesse', mensagem: 'erro-mensagem',
+                     consentimento_lgpd: 'erro-consentimento' };
+      Object.entries(erros || {}).forEach(([campo, msg]) => {
+        if (mapa[campo]) mostrarErroCampo(mapa[campo], Array.isArray(msg) ? msg[0] : msg);
+      });
+    }
+
+    function painel(el, html) {
+      painelOk.hidden = true; painelErro.hidden = true;
+      if (!html) return;
+      el.innerHTML = html;
+      el.hidden = false;
+      el.focus?.();
+    }
+
+    function urlComChave() {
+      // Apps Script recebe a chave por query param (headers não chegam ao doPost).
+      try {
+        const url = new URL(CONFIG.WEBHOOK_URL);
+        url.searchParams.set('api_key', CONFIG.API_KEY);
+        return url.toString();
+      } catch (_) {
+        return CONFIG.WEBHOOK_URL + (CONFIG.WEBHOOK_URL.includes('?') ? '&' : '?') +
+               'api_key=' + encodeURIComponent(CONFIG.API_KEY);
+      }
+    }
+
+    async function enviarRequisicao(payload, tentativa) {
+      const controle = new AbortController();
+      const cronometro = setTimeout(() => controle.abort(), TIMEOUT_MS);
+      try {
+        const resposta = await fetch(urlComChave(), {
+          method: 'POST',
+          redirect: 'follow', // Apps Script responde com redirect para o conteúdo final
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload),
+          signal: controle.signal
+        });
+        const corpo = await resposta.json().catch(() => ({}));
+        return { status: resposta.status, corpo };
+      } catch (falha) {
+        if (tentativa < RETENTATIVAS) return { status: 0, corpo: null, _rede: true, falha };
+        throw falha;
+      } finally {
+        clearTimeout(cronometro);
+      }
+    }
+
+    function tratarResposta(resultado) {
+      const { corpo } = resultado;
+      // Apps Script sempre responde HTTP 200: o contrato vive no corpo (campo "codigo").
+      if (corpo && corpo.sucesso) {
+        const protocolo = corpo.dados && corpo.dados.protocolo;
+        const duplicado = corpo.dados && corpo.dados.duplicado;
+        painel(painelOk,
+          '<p><strong>Recebemos seu contato!</strong></p>' +
+          '<p>Protocolo: <strong class="protocolo">' + (protocolo || '—') + '</strong></p>' +
+          '<p>Um consultor retorna em até 1 dia útil' +
+          (duplicado ? ' (seu envio foi identificado como duplicado — já estamos com você!).' : '.') + '</p>');
+        form.reset();
+        capturarUtms();
+        return true;
+      }
+      const codigo = (corpo && corpo.codigo) || 'SEM_RESPOSTA';
+      const mensagem = (corpo && corpo.mensagem) || 'Falha ao enviar.';
+      if (codigo === 'ERRO_VALIDACAO' && corpo.dados && corpo.dados.erros) {
+        exibirErrosServidor(corpo.dados.erros);
+        painel(painelErro, '<p>Corrija os campos destacados e envie novamente.</p>');
+      } else {
+        painel(painelErro, '<p>' + mensagem + ' <br><small>Código: ' + codigo + '</small></p>');
+      }
+      return false;
+    }
+
+    form.addEventListener('submit', async (evento) => {
+      evento.preventDefault();
+      painel(null);
+      limparErrosCampos();
+
+      if (document.getElementById('website').value !== '') {
+        painel(painelOk, '<p><strong>Recebemos seu contato!</strong></p>');
+        return;
+      }
+
+      const dados = Object.fromEntries(new FormData(form).entries());
+      dados.consentimento_lgpd = document.getElementById('consentimento_lgpd').checked;
+      const erros = validarFormulario(dados);
+      if (Object.keys(erros).length > 0) {
+        const mapa = { nome: 'erro-nome', email: 'erro-email', telefone: 'erro-telefone',
+                       consentimento_lgpd: 'erro-consentimento' };
+        Object.entries(erros).forEach(([campo, msg]) => mostrarErroCampo(mapa[campo], msg));
+        painel(painelErro, '<p>Revise os campos destacados.</p>');
+        return;
+      }
+
+      if (!CONFIG.WEBHOOK_URL || !CONFIG.API_KEY) {
+        painel(painelErro,
+          '<p>Formulário não configurado: preencha <code>CONFIG.WEBHOOK_URL</code> e ' +
+          '<code>CONFIG.API_KEY</code> no topo do &lt;script&gt; (ver README).</p>');
+        return;
+      }
+
+      const payload = {
+        request_id: uuidv4(),
+        nome: dados.nome.trim(),
+        email: dados.email.trim().toLowerCase(),
+        telefone: dados.telefone.trim(),
+        interesse: (dados.interesse || '').trim(),
+        mensagem: (dados.mensagem || '').trim(),
+        utm_source: dados.utm_source || '',
+        utm_medium: dados.utm_medium || '',
+        utm_campaign: dados.utm_campaign || '',
+        utm_term: dados.utm_term || '',
+        utm_content: dados.utm_content || '',
+        consentimento_lgpd: true
+      };
+
+      botao.disabled = true;
+      botao.textContent = 'Enviando…';
+      try {
+        let tentativa = 0;
+        for (;;) {
+          botao.textContent = tentativa === 0 ? 'Enviando…' : 'Reenviando (tentativa ' + (tentativa + 1) + ')…';
+          const resultado = await enviarRequisicao(payload, tentativa);
+          const retentavel = resultado.status === 429 || resultado.status >= 500 || resultado._rede;
+          if (retentavel && tentativa < RETENTATIVAS) {
+            await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, tentativa)));
+            tentativa += 1;
+            continue;
+          }
+          if (resultado._rede && tentativa >= RETENTATIVAS) {
+            painel(painelErro, '<p>Sem conexão com o serviço. Tente novamente em instantes.</p>');
+          } else {
+            tratarResposta(resultado);
+          }
+          break;
+        }
+      } catch (falha) {
+        painel(painelErro, '<p>Erro inesperado ao enviar. Tente novamente em instantes.</p>');
+        console.error('Falha no envio do lead:', falha);
+      } finally {
+        botao.disabled = false;
+        botao.textContent = 'Quero falar com um consultor';
+      }
+    });
+  </script>
+</body>
+</html>
