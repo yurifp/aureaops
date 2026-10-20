@@ -39,6 +39,7 @@ Processos AS-IS x TO-BE e ER: [`docs/processos.md`](docs/processos.md)
 ```
 aureaops/
 ├── README.md                  ← você está aqui
+├── index.html                 ← landing da demonstração pública (Vercel)
 ├── .env.example               ← todas as variáveis (nenhuma credencial real)
 ├── .gitignore
 ├── docs/                      arquitetura · processos · dicionario-dados · api
