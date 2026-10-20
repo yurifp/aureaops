@@ -19,6 +19,9 @@ node_modules/
 # n8n
 n8n-local/
 
+# Vercel CLI (metadados de projeto criados pelo `vercel link`)
+.vercel/
+
 # Sistema / editor
 .DS_Store
 Thumbs.db
